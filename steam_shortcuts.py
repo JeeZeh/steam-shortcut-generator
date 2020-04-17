@@ -1,6 +1,8 @@
 import sys, winreg, pathlib, re, urllib3, shutil
+from os import path
 
 http = urllib3.PoolManager()
+
 
 def main():
     """
@@ -26,11 +28,9 @@ def main():
     check_for_icons(games)
     found_icons = len([True for game in games.values() if game["icon"]])
     print(f"\nFound {found_icons} icon{'s' if found_icons != 1 else ''}")
-
-
-    # Ask the user if they'd like to download the missing icons    
+    # Ask the user if they'd like to download the missing icons
     # By default will download missing icons and create shortcuts with missing icons
-    create_with_missing, try_download = True, True 
+    create_with_missing, try_download, start_menu = True, True, False
     missing = len(games) - found_icons
     if missing > 0:
         print(f"\nNeed to acquire {missing} icon{'s' if missing != 1 else ''}")
@@ -53,10 +53,20 @@ def main():
         != "n"
     )
 
+    start_menu = (
+        input("\nAdd shortcuts to a Start Menu folder (requires Admin)? y/[N] ").lower().strip() == "y"
+    )
+
     # Create shortcuts, show some stats, and exit
-    count = create_shortcuts(games, create_with_missing)
+    try:
+        count, folder = create_shortcuts(games, create_with_missing, start_menu)
+    except PermissionError:
+        print("\n\nTo add to the start menu, please run this tool from an elevated (admin) terminal")
+        print("Falling back to ./shortcuts")
+        count, folder = create_shortcuts(games, create_with_missing)
+
     print(f"\nDone! Created {count} shortcut{'s' if count != 1 else ''}")
-    print("You can find them shortcuts in ./shortcuts")
+    print(f"You can find them in {f'./{folder}' if not start_menu else f'your Start Menu ({folder})'}")
 
 
 def get_steam_library_index():
@@ -114,7 +124,6 @@ def get_library_folders(steam_path, library_index_path):
     Returns the library locations
     """
 
-
     locations = []
 
     # Find the lines matching a library folder (the library index, and the location)
@@ -142,8 +151,7 @@ def get_installed_games(libraries):
     manifests = [
         item
         for sublist in [
-            [x for x in path.glob("steamapps/appmanifest_*.acf")]
-            for path in libraries
+            [x for x in path.glob("steamapps/appmanifest_*.acf")] for path in libraries
         ]
         for item in sublist
     ]
@@ -151,7 +159,7 @@ def get_installed_games(libraries):
     # We want to find the game name and install directory
     patterns = [re.compile('"name".+".+"'), re.compile('"installdir".+".+"')]
     games = dict()
-    
+
     # Parse each manifest and build the games dict
     for m in manifests:
         with open(m.resolve(), encoding="utf-8") as acf:
@@ -178,7 +186,7 @@ def check_for_icons(games):
     For each game, checks to see if an icon exists the  game by looking
     for an icon.ico in the game's installation directory
     """
-    
+
     for appid, game in games.items():
         try:
             games[appid]["icon"] = pathlib.Path(game["location"] / "icon.ico").resolve(
@@ -223,7 +231,7 @@ def get_icons(games):
             pass
 
 
-def create_shortcuts(games, create_with_missing):
+def create_shortcuts(games, create_with_missing, start_menu=False):
     """
     For each game, now create the URL shortcuts to steam://rungameid/{appid}, 
     set the icon if it exists, or blank if the user asks for icon-less shortcuts
@@ -231,14 +239,22 @@ def create_shortcuts(games, create_with_missing):
     Returns the number of shortcuts created
     """
 
-    folder = pathlib.Path("./shortcuts")
+    if start_menu:
+        s = pathlib.Path(
+            path.expandvars(
+                "%SystemDrive%\ProgramData\Microsoft\Windows\Start Menu\Programs"
+            )
+        )
+        folder = s / "Steam Games"
+    else:
+        folder = pathlib.Path("./shortcuts")
     folder.mkdir(parents=True, exist_ok=True)
     count = 0
     for appid, game in games.items():
         # Sanitise the game's name for use as a filename
         filename = re.sub(r'[\\/*?:"<>|]', "", game["name"]) + ".url"
 
-        # Skip game if missing the icon and the user asked to 
+        # Skip game if missing the icon and the user asked to
         # not create shortcuts with missing icons
         if not game["icon"] and not create_with_missing:
             continue
@@ -251,7 +267,7 @@ def create_shortcuts(games, create_with_missing):
             shortcut.write(f"IconFile={game['icon']}\n")
         count += 1
 
-    return count
+    return (count, folder)
 
 
 if __name__ == "__main__":
