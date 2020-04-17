@@ -30,6 +30,6 @@ If you have a large library of installed games and you don't want to manually cr
 7. Done! No tidying up is done since the icons are kept in the game folders for use by each shortcut. I guess things might break if you uninstall the game, but they're just shortcuts :) 
 
 ## Warnings
-- I'm not using the Steam API nor or any API for SteamDB. It potentially does a LOT of webscraping, so if you get IP-banned from SteamDB, don't blame me.
-- It only supports Windows, and does simple checks for sanity like current folder etc. - If you don't follow the usage instructions and it breaks something, don't blame me. (P.S. All it does is write icon files and create shortcuts, but who knows, this is software) 
+- I'm not using the Steam API nor any API for SteamDB. It potentially does a **LOT** of webscraping, so if you get IP-banned from Steam or SteamDB, don't blame me. Also if anything changes it might break.
+- It only supports Windows, and does simple checks for sanity like current folder etc. - if you don't follow the usage instructions (or if you do) and it breaks something, don't blame me. (P.S. All it does is write icon files and create shortcuts, but who knows, this is software) 
 - Not all icons created may be usable, like Steamworks Redist, Proton, etc.
