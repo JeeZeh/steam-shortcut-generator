@@ -4,6 +4,9 @@
 
 ---
 
+**Steam now supports this through selecting multiple library games > Manage > Create Desktop Shortcuts**
+It can't, however, add them to the start menu for you automatically. This tool can!
+
 Ever needed to recreate all of your Steam shortcuts? Maybe you forgot to back them up when reinstalling your OS, or just never created them in the first place...
 
 If you have a large library of installed games and you don't want to manually create the shortcut for each one, then this is the tool for you!
