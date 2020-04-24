@@ -54,19 +54,26 @@ def main():
     )
 
     start_menu = (
-        input("\nAdd shortcuts to a Start Menu folder (requires Admin)? y/[N] ").lower().strip() == "y"
+        input("\nAdd shortcuts to a Start Menu folder (requires Admin)? y/[N] ")
+        .lower()
+        .strip()
+        == "y"
     )
 
     # Create shortcuts, show some stats, and exit
     try:
         count, folder = create_shortcuts(games, create_with_missing, start_menu)
     except PermissionError:
-        print("\n\nTo add to the start menu, please run this tool from an elevated (admin) terminal")
+        print(
+            "\n\nTo add to the start menu, please run this tool from an elevated (admin) terminal"
+        )
         print("Falling back to ./shortcuts")
         count, folder = create_shortcuts(games, create_with_missing)
 
     print(f"\nDone! Created {count} shortcut{'s' if count != 1 else ''}")
-    print(f"You can find them in {f'./{folder}' if not start_menu else f'your Start Menu ({folder})'}")
+    print(
+        f"You can find them in {f'./{folder}' if not start_menu else f'your Start Menu ({folder})'}"
+    )
 
 
 def get_steam_library_index():
@@ -162,21 +169,32 @@ def get_installed_games(libraries):
 
     # Parse each manifest and build the games dict
     for m in manifests:
-        with open(m.resolve(), encoding="utf-8") as acf:
-            lines = acf.readlines()
-            name, location = [
-                (
-                    p.search("\n".join([l.strip() for l in lines]))[0]
-                    .replace('"', "")
-                    .split("\t\t")[1]
-                )
-                for p in patterns
-            ]
-            games[m.stem.split("_")[1]] = {
-                "name": name,
-                "location": m.parent / f"common/{location}",
-                "icon": None,
-            }
+        try:
+            with open(m.resolve(), encoding="utf-8") as acf:
+                lines = acf.readlines()
+                name, location = [
+                    p.search("\n".join([l.strip() for l in lines])) for p in patterns
+                ]
+
+                if name and location:
+                    name, location = [
+                        field[0].replace('"', "").split("\t\t")[1]
+                        for field in [name, location]
+                    ]
+                    games[m.stem.split("_")[1]] = {
+                        "name": name,
+                        "location": m.parent / f"common/{location}",
+                        "icon": None,
+                    }
+                else:
+                    print(
+                        f"  Couldn't locate name or location for file {m}\n  Name: {name}\n  Location: {location}\n"
+                    )
+
+        except KeyboardInterrupt as e:
+            raise
+        except Exception as e:
+            print("Unhandled exception when reading file", m, e)
 
     return games
 
