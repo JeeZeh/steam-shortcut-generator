@@ -1,5 +1,10 @@
-import sys, winreg, pathlib, re, urllib3, shutil
+import sys, winreg, pathlib, re, urllib3, shutil, traceback, json
+from io import StringIO
+from PIL import Image
 from os import path
+
+STEAM_API = "http://api.steampowered.com/"
+KEY = "66D1275E24E6B963247C47EF178BD6B1"
 
 http = urllib3.PoolManager()
 
@@ -17,8 +22,10 @@ def main():
         print("No libraries to check")
         exit(0)
 
+    icons = get_steam_game_icons()
+
     # Show game and folder info to user
-    games = get_installed_games(libraries)
+    games = get_installed_games(libraries, icons)
     print(
         f"Found {len(games)} game{'s' if len(games) > 1 else ''} in the following libraries:"
     )
@@ -74,6 +81,46 @@ def main():
     print(
         f"You can find them in {f'./{folder}' if not start_menu else f'your Start Menu ({folder})'}"
     )
+
+
+"GetOwnedGames"
+
+
+def get_steam_game_icons():
+    username = input("Please enter your Steam username (not nickname): ")
+    id_endpoint = (
+        f"{STEAM_API}ISteamUser/ResolveVanityURL/v0001/?key={KEY}&vanityurl={username}"
+    )
+    resolve_id = http.request("GET", id_endpoint)
+    body = json.loads(resolve_id.data.decode("utf-8"))
+    id = None
+    if body["response"]["success"] == 1:
+        id = body["response"]["steamid"]
+
+    if id is None:
+        print(
+            "Could not retrieve SteamID from username. Double check your username and try again"
+        )
+        print("If this issue persists, please report it on github!")
+        exit(-1)
+
+    games_endpoint = f"{STEAM_API}IPlayerService/GetOwnedGames/v0001/?key={KEY}&steamid={id}&format=json&include_appinfo=true&include_played_free_games=true"
+    resolve_id = http.request("GET", games_endpoint)
+    body = json.loads(resolve_id.data.decode("utf-8"))
+    if len(body["response"]) == 0:
+        print(f"Empty response from SteamAPI for user {username} ({id})")
+        with open("error_log.txt", "a", encoding="utf-8") as f:
+            f.write(f"Empty response from SteamAPI for user {username} ({id}):\n")
+            f.write(json.dumps(body))
+
+        exit(-1)
+
+    appid_to_icon = {
+        str(game["appid"]): f"{game['img_icon_url']}.jpg"
+        for game in body["response"]["games"]
+    }
+
+    return appid_to_icon
 
 
 def get_steam_library_index():
@@ -146,7 +193,7 @@ def get_library_folders(steam_path, library_index_path):
     return sorted(libraries)
 
 
-def get_installed_games(libraries):
+def get_installed_games(libraries, icons):
     """
     For each library, parse all the appmanifest_xxx.acf files for
     game names and install locations, where xxx is the appid of an installed game.
@@ -177,14 +224,26 @@ def get_installed_games(libraries):
                 ]
 
                 if name and location:
+                    appid = m.stem.split("_")[1]
                     name, location = [
                         field[0].replace('"', "").split("\t\t")[1]
                         for field in [name, location]
                     ]
-                    games[m.stem.split("_")[1]] = {
+                    location = m.parent / f"common/{location}"
+                    try:
+                        location.resolve(strict=True)
+                    except:
+                        continue
+                    games[appid] = {
                         "name": name,
-                        "location": m.parent / f"common/{location}",
+                        "location": location,
                         "icon": None,
+                        "icon_hash": icons[appid].split(".")[0]
+                        if appid in icons.keys()
+                        else None,
+                        "icon_ext": icons[appid].split(".")[1]
+                        if appid in icons.keys()
+                        else None,
                     }
                 else:
                     print(
@@ -207,11 +266,12 @@ def check_for_icons(games):
 
     for appid, game in games.items():
         try:
-            games[appid]["icon"] = pathlib.Path(game["location"] / "icon.ico").resolve(
-                strict=True
+            icon_path = pathlib.Path(
+                game["location"] / f"{game['icon_hash']}.{game['icon_ext']}"
             )
+            games[appid]["icon"] = icon_path.resolve(strict=True)
         except Exception as e:
-            pass
+            continue
 
 
 def get_icons(games):
@@ -223,30 +283,26 @@ def get_icons(games):
     for appid, game in filter(lambda g: not g[1]["icon"], games.items()):
         print(f"  Downloading icon for {appid} ({game['name']})")
         try:
-            # Fetch the SteamDB page for the game
-            steamdb = f"https://steamdb.info/app/{appid}/"
-            r = http.request("GET", steamdb)
-
-            # Find the link to the game's ico on the SteamCDN
-            p = re.compile(
-                f"https://steamcdn-a.akamaihd.net/steamcommunity/public/images/apps/{appid}/.*.ico"
-            )
-            ico_url = p.search(r.data.decode("utf-8"))[0]
+            if game["icon_hash"] is None:
+                raise Exception(f"No Icon URL found for {appid} ({game['name']})")
 
             # Write the ico data to an icon file in the game's install dir
-            ico_location = game["location"] / "icon.ico"
-            with http.request("GET", ico_url, preload_content=False) as response, open(
-                ico_location, "wb+"
-            ) as outfile:
-                shutil.copyfileobj(response, outfile)
-            response.release_conn()
+            icon_url = f"https://steamcdn-a.akamaihd.net/steamcommunity/public/images/apps/{appid}/{game['icon_hash']}.{game['icon_ext']}"
+            icon_path = pathlib.Path(game["location"] / f"{game['icon_hash']}.ico")
+            with http.request("GET", icon_url, preload_content=False) as jpg_data, open(
+                icon_path, "wb+"
+            ) as ico_file:
+                jpg = Image.open(jpg_data)
+                jpg.save(icon_path)
+            jpg_data.release_conn()
 
             # Set the icon location for the game
-            games[appid]["icon"] = ico_location
+            games[appid]["icon"] = icon_path
         except KeyboardInterrupt:
             raise
-        except:
-            pass
+        except Exception as e:
+            with open("error_log.txt", "a", encoding="utf-8") as f:
+                f.write(traceback.format_exc())
 
 
 def create_shortcuts(games, create_with_missing, start_menu=False):
@@ -293,5 +349,5 @@ if __name__ == "__main__":
         main()
     except KeyboardInterrupt as ke:
         print(ke)
-    except Exception as e:
-        print("Unexpected exception", e)
+    except Exception:
+        print("Unexpected exception", traceback.print_exc())
