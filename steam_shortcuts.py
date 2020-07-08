@@ -82,10 +82,6 @@ def main():
         f"You can find them in {f'./{folder}' if not start_menu else f'your Start Menu ({folder})'}"
     )
 
-
-"GetOwnedGames"
-
-
 def get_steam_game_icons():
     username = input("Please enter your Steam username (not nickname): ")
     id_endpoint = (
@@ -267,7 +263,7 @@ def check_for_icons(games):
     for appid, game in games.items():
         try:
             icon_path = pathlib.Path(
-                game["location"] / f"{game['icon_hash']}.{game['icon_ext']}"
+                game["location"] / f"{game['icon_hash']}.ico"
             )
             games[appid]["icon"] = icon_path.resolve(strict=True)
         except Exception as e:
@@ -339,6 +335,7 @@ def create_shortcuts(games, create_with_missing, start_menu=False):
             shortcut.write("IconIndex=0\n")
             shortcut.write(f"URL=steam://rungameid/{appid}\n")
             shortcut.write(f"IconFile={game['icon']}\n")
+            print(f"IconFile={game['icon']}\n")
         count += 1
 
     return (count, folder)
