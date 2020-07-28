@@ -19,11 +19,12 @@ If you have a large library of installed games and you don't want to manually cr
 
 > Note: the shortcuts created are .url links, just like the ones Steam creates - this is because I can't tell which .exe is the one that launches the game, plus Steam sometimes likes to give you launch dialogues
 
-1. You need [Python 3.6 or newer](https://www.python.org/downloads/) installed
-2. You will need to run `[your python3 alias] -m pip install pillow` 
-3. From the command-line, PowerShell or equivialent terminal, run `[your python3 alias] steam_shortcuts.py`.
-4. Follow the prompts to create shortcuts with or without icons. You'll need to enter your Steam name, this is just used to cross reference the games you own for their icon file.
-5. The shortcuts will be created in `./shortcuts`, relative to wherever the script was run from
+1. You need [Python 3.6 or newer](https://www.python.org/downloads/) installed.
+2. Your Steam profile must have game library set to publicly visible.
+3. You will need to run `[your python3 alias] -m pip install pillow` 
+4. From the command-line, PowerShell or equivialent terminal, run `[your python3 alias] steam_shortcuts.py`.
+5. Follow the prompts to create shortcuts with or without icons. You'll need to enter your Steam name, this is just used to cross reference the games you own for their icon file.
+6. The shortcuts will be created in `./shortcuts`, relative to wherever the script was run from
 
 ## What it does
 
@@ -38,5 +39,6 @@ If you have a large library of installed games and you don't want to manually cr
 ## Warnings
 - The icons are currently LOW res due to the SteamAPI not providing a high quality link, like scraping SteamDB used to.
 - Your Steam account must own the games for the tool to fetch the icons. It can still create icon-less shortcuts if you want though.
+- It will try to use your username to retrieve your Steam profile & ID. If you set a custom profile URL you should enter that (the end ID-part) as your username.
 - It only supports Windows, and does simple checks for sanity like current folder etc. - if you don't follow the usage instructions (or if you do) and it breaks something, don't blame me. (P.S. All it does is write icon files and create shortcuts, but who knows, this is software) 
 - Not all icons created may be usable, like Steamworks Redist, Proton, etc.

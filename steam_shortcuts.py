@@ -5,7 +5,8 @@ from os import path
 
 STEAM_API = "http://api.steampowered.com/"
 KEY = "66D1275E24E6B963247C47EF178BD6B1"
-
+games_endpoint = f"{STEAM_API}IPlayerService/GetOwnedGames/v0001/?key={KEY}&format=json&include_appinfo=true&include_played_free_games=true&steamid="
+id_endpoint = f"{STEAM_API}ISteamUser/ResolveVanityURL/v0001/?key={KEY}&vanityurl="
 http = urllib3.PoolManager()
 
 
@@ -31,16 +32,29 @@ def main():
     )
     print("\n".join(map(lambda x: f"  {x}", libraries)))
 
+    games_without_icon_hashes = [
+        "  " + game["name"] for game in games.values() if game["icon_hash"] is None
+    ]
+
+    if games_without_icon_hashes:
+        print(
+            f"\nFound installed games ({len(games_without_icon_hashes)}) which don't belong to your account."
+        )
+        print("\n".join(games_without_icon_hashes))
+        print(
+            "Shortcuts for these games can still be created, but they will not have icons."
+        )
+
     # Try and find any existing icons for the found games
     check_for_icons(games)
     found_icons = len([True for game in games.values() if game["icon"]])
-    print(f"\nFound {found_icons} icon{'s' if found_icons != 1 else ''}")
+    print(f"\nFound {found_icons} existing game icon{'s' if found_icons != 1 else ''}")
     # Ask the user if they'd like to download the missing icons
     # By default will download missing icons and create shortcuts with missing icons
     create_with_missing, try_download, start_menu = True, True, False
     missing = len(games) - found_icons
     if missing > 0:
-        print(f"\nNeed to acquire {missing} icon{'s' if missing != 1 else ''}")
+        print(f"\nMissing icons for {missing} game{'s' if missing != 1 else ''}")
         try_download = input("Try to download them now? [Y]/n ").lower().strip() != "n"
 
     if try_download:
@@ -82,31 +96,49 @@ def main():
         f"You can find them in {f'./{folder}' if not start_menu else f'your Start Menu ({folder})'}"
     )
 
-def get_steam_game_icons():
-    username = input("Please enter your Steam username (not nickname): ")
-    id_endpoint = (
-        f"{STEAM_API}ISteamUser/ResolveVanityURL/v0001/?key={KEY}&vanityurl={username}"
-    )
-    resolve_id = http.request("GET", id_endpoint)
-    body = json.loads(resolve_id.data.decode("utf-8"))
-    id = None
-    if body["response"]["success"] == 1:
-        id = body["response"]["steamid"]
 
-    if id is None:
-        print(
-            "Could not retrieve SteamID from username. Double check your username and try again"
-        )
+def isInteger(x):
+    try:
+        int(x)
+        return True
+    except:
+        return False
+
+
+def get_steam_game_icons():
+    games_endpoint = f"{STEAM_API}IPlayerService/GetOwnedGames/v0001/?key={KEY}&format=json&include_appinfo=true&include_played_free_games=true&steamid="
+    print(
+        """\nThis tool needs to know your Steam ID (long number). 
+If you're feeling lazy, just enter your username and it will try to find it using your Steam profile.
+Manually locate your Steam ID and enter it here if your username doesn't work!"""
+    )
+
+    username = input(
+        "\nPlease enter your Steam ID, username (not nickname), or custom profile id: "
+    )
+
+    steam_id = get_steam_id(username)
+
+    if steam_id is None:
+        if isInteger(username):
+            print("\nIt looks like you entered an invalid Steam ID")
+        else:
+            print("\nCould not retrieve SteamID from username: " + username)
+
+        print("Please double check your details and try again.")
         print("If this issue persists, please report it on github!")
         exit(-1)
 
-    games_endpoint = f"{STEAM_API}IPlayerService/GetOwnedGames/v0001/?key={KEY}&steamid={id}&format=json&include_appinfo=true&include_played_free_games=true"
-    resolve_id = http.request("GET", games_endpoint)
+    resolve_id = http.request("GET", games_endpoint + steam_id)
     body = json.loads(resolve_id.data.decode("utf-8"))
-    if len(body["response"]) == 0:
-        print(f"Empty response from SteamAPI for user {username} ({id})")
+    if resolve_id.status != 200:
+        print(f"Provided or resolved ID not working: {steam_id}")
+        print(f"Please check ID manually & report on GitHub if the issue persists.")
+    elif len(body["response"]) == 0:
+        print(f"\nEmpty response from SteamAPI")
+        print(f"{steam_id}'s game library is not publicly visible")
         with open("error_log.txt", "a", encoding="utf-8") as f:
-            f.write(f"Empty response from SteamAPI for user {username} ({id}):\n")
+            f.write(f"Empty response from SteamAPI for user {username} ({steam_id}):\n")
             f.write(json.dumps(body))
 
         exit(-1)
@@ -117,6 +149,32 @@ def get_steam_game_icons():
     }
 
     return appid_to_icon
+
+
+def get_steam_id(username):
+    """
+    Tries to resolve ID from username using ResolveVanityURL. On failure, see
+    if the username provided was actually an ID already. On failure, return None.
+    """
+
+    # Assume username is not an ID
+    resolve_id = http.request("GET", id_endpoint + username)
+    body = json.loads(resolve_id.data.decode("utf-8"))
+    steam_id = None
+    if body["response"]["success"] == 1:
+        steam_id = body["response"]["steamid"]
+        print("Found ID from username: " + steam_id)
+        return steam_id
+    elif isInteger(username):
+        # See if username is an ID
+        resolve_id = http.request("GET", games_endpoint + username)
+        body = json.loads(resolve_id.data.decode("utf-8"))
+        print(resolve_id.status)
+        print(len(body["response"]))
+        if resolve_id.status == 200 and len(body["response"]) > 0:
+            return username
+
+    return None
 
 
 def get_steam_library_index():
@@ -194,7 +252,7 @@ def get_installed_games(libraries, icons):
     For each library, parse all the appmanifest_xxx.acf files for
     game names and install locations, where xxx is the appid of an installed game.
 
-    Returns a dictionary of appid -> {name, location, icon} 
+    Returns a dictionary of appid -> {name, location, icon, icon_hash, icon_ext} 
     """
 
     # Horrible flattening of each manifest file
@@ -243,7 +301,7 @@ def get_installed_games(libraries, icons):
                     }
                 else:
                     print(
-                        f"  Couldn't locate name or location for file {m}\n  Name: {name}\n  Location: {location}\n"
+                        f"  Couldn't locate name or location for game {m}\n  Name: {name}\n  Location: {location}\n"
                     )
 
         except KeyboardInterrupt as e:
@@ -262,9 +320,7 @@ def check_for_icons(games):
 
     for appid, game in games.items():
         try:
-            icon_path = pathlib.Path(
-                game["location"] / f"{game['icon_hash']}.ico"
-            )
+            icon_path = pathlib.Path(game["location"] / f"{game['icon_hash']}.ico")
             games[appid]["icon"] = icon_path.resolve(strict=True)
         except Exception as e:
             continue
@@ -335,7 +391,6 @@ def create_shortcuts(games, create_with_missing, start_menu=False):
             shortcut.write("IconIndex=0\n")
             shortcut.write(f"URL=steam://rungameid/{appid}\n")
             shortcut.write(f"IconFile={game['icon']}\n")
-            print(f"IconFile={game['icon']}\n")
         count += 1
 
     return (count, folder)
