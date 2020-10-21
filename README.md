@@ -21,7 +21,7 @@ If you have a large library of installed games and you don't want to manually cr
 
 1. You need [Python 3.6 or newer](https://www.python.org/downloads/) installed.
 2. Your Steam profile must have game library set to publicly visible.
-3. You will need to run `[your python3 alias] -m pip install pillow` 
+3. You will need to run `[your python3 alias] -m pip install pillow urllib3` 
 4. From the command-line, PowerShell or equivialent terminal, run `[your python3 alias] steam_shortcuts.py`.
 5. Follow the prompts to create shortcuts with or without icons. You'll need to enter your Steam name, this is just used to cross reference the games you own for their icon file.
 6. The shortcuts will be created in `./shortcuts`, relative to wherever the script was run from
