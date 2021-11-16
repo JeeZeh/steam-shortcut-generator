@@ -1,7 +1,7 @@
 import sys, winreg, pathlib, re, urllib3, shutil, traceback, json
-from io import StringIO
 from PIL import Image
 from os import path
+import vdf
 
 STEAM_API = "http://api.steampowered.com/"
 KEY = "66D1275E24E6B963247C47EF178BD6B1"
@@ -232,16 +232,16 @@ def get_library_folders(steam_path, library_index_path):
     Returns the library locations
     """
 
-    locations = []
+    libraries = []
 
-    # Find the lines matching a library folder (the library index, and the location)
-    p = re.compile('"\d{1,3}".+".+"')
-    with open(library_index_path.resolve(), encoding="utf-8") as index:
-        locations = [p.findall(line.strip()) for line in index if p.search(line)]
+    with open(library_index_path) as index_file:
+        lib_vdf = vdf.load(index_file)
 
-    libraries = [
-        pathlib.Path(l[0].split("\t\t")[1].replace('"', "")) for l in locations
-    ]
+    for lib in lib_vdf.get("libraryfolders", {}).values():
+        if isinstance(lib, dict) and lib.get("path"):
+            path = pathlib.Path(lib['path'])
+            libraries.append(path)
+
     libraries.append(steam_path)
 
     return sorted(libraries)
