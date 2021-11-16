@@ -1,5 +1,4 @@
 import sys, winreg, pathlib, re, urllib3, shutil, traceback, json
-from io import StringIO
 from PIL import Image
 from os import path
 import vdf
@@ -235,10 +234,11 @@ def get_library_folders(steam_path, library_index_path):
 
     libraries = []
 
-    libVDF = vdf.load(open(library_index_path))
+    with open(library_index_path) as index_file:
+        lib_vdf = vdf.load(index_file)
 
-    for lib in libVDF['libraryfolders'].values():
-        if(type(lib) != str and lib['path']):
+    for lib in lib_vdf.get("libraryfolders", {}).values():
+        if isinstance(lib, dict) and lib.get("path"):
             path = pathlib.Path(lib['path'])
             libraries.append(path)
 
