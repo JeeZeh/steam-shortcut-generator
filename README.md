@@ -26,7 +26,7 @@ It can't, however, add them to the start menu for you automatically. This tool c
 
 > 
 
-1. You need [Python 3.6 or newer](https://www.python.org/downloads/) installed.
+1. You need [Python 3.6 or newer](https://www.python.org/downloads/) installed (Python 3.8+ is recommended).
 2. Your Steam profile must have game library set to *publicly visible*.
 3. Install the requirements `pip install -U -r requirements.txt`
 4. From the command-line, PowerShell or equivialent terminal, run `python steam_shortcuts.py`.
