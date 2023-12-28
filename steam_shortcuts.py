@@ -3,6 +3,7 @@ import pathlib
 import re
 import sys
 import traceback
+from typing import List, Tuple
 import winreg
 from os import path
 
@@ -23,14 +24,16 @@ def main():
     """
 
     # Get path to Steam and libraries
-    steam_path, library_index_path = get_steam_library_index()
-    libraries = get_library_folders(steam_path, library_index_path)
+    steam_path = get_steam_path()
+    library_path = get_steam_library_path(steam_path)
+    libraries = get_library_folders(steam_path, library_path)
+    local_users = get_steam_local_user_ids(steam_path)
 
     if not libraries:
         print("No libraries to check")
         exit(0)
 
-    icons = get_steam_game_icons()
+    icons = get_steam_game_icons(local_users)
 
     # Show game and folder info to user
     games = get_installed_games(libraries, icons)
@@ -104,7 +107,7 @@ def main():
     )
 
 
-def isInteger(x):
+def is_integer(x):
     try:
         int(x)
         return True
@@ -112,29 +115,11 @@ def isInteger(x):
         return False
 
 
-def get_steam_game_icons():
+def get_steam_game_icons(local_users: List[Tuple[str, str]]):
     games_endpoint = f"{STEAM_API}IPlayerService/GetOwnedGames/v0001/?key={KEY}&format=json&include_appinfo=true&include_played_free_games=true&steamid="
-    print(
-        """\nThis tool needs to know your Steam ID (long number). 
-If you're feeling lazy, just enter your username and it will try to find it using your Steam profile.
-Manually locate your Steam ID and enter it here if your username doesn't work!"""
-    )
+    print("""This tool needs to know your Steam ID (long number).""")
 
-    username = input(
-        "\nPlease enter your Steam ID, username (not nickname), or custom profile id: "
-    )
-
-    steam_id = get_steam_id(username)
-
-    if steam_id is None:
-        if isInteger(username):
-            print("\nIt looks like you entered an invalid Steam ID")
-        else:
-            print("\nCould not retrieve SteamID from username: " + username)
-
-        print("Please double check your details and try again.")
-        print("If this issue persists, please report it on github!")
-        exit(-1)
+    username, steam_id = determine_username_id(local_users)
 
     resolve_id = http.request("GET", games_endpoint + steam_id)
     body = json.loads(resolve_id.data.decode("utf-8"))
@@ -158,7 +143,50 @@ Manually locate your Steam ID and enter it here if your username doesn't work!""
     return appid_to_icon
 
 
-def get_steam_id(username):
+def determine_username_id(local_users: List[Tuple[str, str]]):
+    username, steam_id = None, None
+
+    if local_users:
+        while True:
+            options = "\n".join(
+                f"{i+1}) {u[0]} ({u[1]})" for i, u in enumerate(local_users)
+            )
+            idx = input(
+                "\nFound local users, enter a choice and press Enter:\n"
+                + options
+                + "\nX) Enter username manually...\nChoice: "
+            )
+            print()
+            if idx.lower() == "x":
+                break
+            try:
+                choice = int(idx)
+                if choice > 0 and choice <= len(local_users):
+                    username, steam_id = local_users[choice - 1]
+                    break
+            except:
+                print("Invalid input: " + idx)
+
+    if username is None or steam_id is None:
+        username = input(
+            "\nPlease enter your Steam ID, username (not nickname), or custom profile id: "
+        )
+
+        steam_id = resolve_steam_id_from_username(username)
+
+        if steam_id is None:
+            if is_integer(username):
+                print("\nIt looks like you entered an invalid Steam ID")
+            else:
+                print("\nCould not retrieve SteamID from username: " + username)
+
+            print("Please double check your details and try again.")
+            print("If this issue persists, please report it on github!")
+            exit(-1)
+    return username, steam_id
+
+
+def resolve_steam_id_from_username(username):
     """
     Tries to resolve ID from username using ResolveVanityURL. On failure, see
     if the username provided was actually an ID already. On failure, return None.
@@ -172,7 +200,7 @@ def get_steam_id(username):
         steam_id = body["response"]["steamid"]
         print("Found ID from username: " + steam_id)
         return steam_id
-    elif isInteger(username):
+    elif is_integer(username):
         # See if username is an ID
         resolve_id = http.request("GET", games_endpoint + username)
         body = json.loads(resolve_id.data.decode("utf-8"))
@@ -184,7 +212,39 @@ def get_steam_id(username):
     return None
 
 
-def get_steam_library_index():
+def get_steam_library_path(steam_path: pathlib.Path) -> pathlib.Path:
+    # Try and get the library index file as a sanity check for the right folder
+    try:
+        return pathlib.Path(
+            [x for x in steam_path.glob("steamapps/libraryfolders.vdf")][0]
+        )
+    except:
+        print("Could not locate local library.")
+        exit(-1)
+
+
+def get_steam_local_user_ids(steam_path: pathlib.Path) -> List[Tuple[str, str]]:
+    # Try and get the library index file as a sanity check for the right folder
+    users = []
+    try:
+        login_file = list(steam_path.glob("config/loginusers.vdf"))
+        if not login_file:
+            return []
+
+        with open(login_file[0]) as index_file:
+            lib_vdf = vdf.load(index_file)
+
+            for id_, data in lib_vdf.get("users", {}).items():
+                if isinstance(data, dict) and data.get("AccountName"):
+                    users.append((data["AccountName"], id_))
+
+    except:
+        print("Could not locate local users.")
+    finally:
+        return users
+
+
+def get_steam_path():
     """
     Tries to get the Steam installation folder, or asks the user.
     This will also get the location to the library listings file,
@@ -216,16 +276,7 @@ def get_steam_library_index():
 
     steam_path = pathlib.Path(steam_path)
 
-    # Try and get the library index file as a sanity check for the right folder
-    try:
-        library_index_path = pathlib.Path(
-            [x for x in steam_path.glob("steamapps/libraryfolders.vdf")][0]
-        )
-    except:
-        print("This doesn't look like the right folder!")
-        exit()
-
-    return (steam_path, library_index_path)
+    return steam_path
 
 
 def get_library_folders(steam_path, library_index_path):
