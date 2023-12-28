@@ -34,15 +34,23 @@ def main():
 
     # Show game and folder info to user
     games = get_installed_games(libraries, icons)
-    print(f"Found {len(games)} game{'s' if len(games) > 1 else ''} in the following libraries:")
+    print(
+        f"Found {len(games)} game{'s' if len(games) > 1 else ''} in the following libraries:"
+    )
     print("\n".join(map(lambda x: f"  {x}", libraries)))
 
-    games_without_icon_hashes = ["  " + game["name"] for game in games.values() if game["icon_hash"] is None]
+    games_without_icon_hashes = [
+        "  " + game["name"] for game in games.values() if game["icon_hash"] is None
+    ]
 
     if games_without_icon_hashes:
-        print(f"\nFound installed games ({len(games_without_icon_hashes)}) which don't belong to your account.")
+        print(
+            f"\nFound installed games ({len(games_without_icon_hashes)}) which don't belong to your account."
+        )
         print("\n".join(games_without_icon_hashes))
-        print("Shortcuts for these games can still be created, but they will not have icons.")
+        print(
+            "Shortcuts for these games can still be created, but they will not have icons."
+        )
 
     # Try and find any existing icons for the found games
     check_for_icons(games)
@@ -62,24 +70,38 @@ def main():
     # Check for any icons that are still missing
     failed = [game["name"] for game in games.values() if not game["icon"]]
     if failed and try_download:
-        print(f"\nFailed to acquire the following {len(failed)} icon{'s' if len(failed) != 1 else ''}")
+        print(
+            f"\nFailed to acquire the following {len(failed)} icon{'s' if len(failed) != 1 else ''}"
+        )
         print("\n".join(map(lambda x: f"  {x}", failed)))
 
     # Ask if the user would like to create shortcuts with missing icons
-    create_with_missing = input("\nCreate shortcuts for games without icons? [Y]/n ").lower().strip() != "n"
+    create_with_missing = (
+        input("\nCreate shortcuts for games without icons? [Y]/n ").lower().strip()
+        != "n"
+    )
 
-    start_menu = input("\nAdd shortcuts to a Start Menu folder (requires Admin)? y/[N] ").lower().strip() == "y"
+    start_menu = (
+        input("\nAdd shortcuts to a Start Menu folder (requires Admin)? y/[N] ")
+        .lower()
+        .strip()
+        == "y"
+    )
 
     # Create shortcuts, show some stats, and exit
     try:
         count, folder = create_shortcuts(games, create_with_missing, start_menu)
     except PermissionError:
-        print("\n\nTo add to the start menu, please run this tool from an elevated (admin) terminal")
+        print(
+            "\n\nTo add to the start menu, please run this tool from an elevated (admin) terminal"
+        )
         print("Falling back to ./shortcuts")
         count, folder = create_shortcuts(games, create_with_missing)
 
     print(f"\nDone! Created {count} shortcut{'s' if count != 1 else ''}")
-    print(f"You can find them in {f'./{folder}' if not start_menu else f'your Start Menu ({folder})'}")
+    print(
+        f"You can find them in {f'./{folder}' if not start_menu else f'your Start Menu ({folder})'}"
+    )
 
 
 def isInteger(x):
@@ -98,7 +120,9 @@ If you're feeling lazy, just enter your username and it will try to find it usin
 Manually locate your Steam ID and enter it here if your username doesn't work!"""
     )
 
-    username = input("\nPlease enter your Steam ID, username (not nickname), or custom profile id: ")
+    username = input(
+        "\nPlease enter your Steam ID, username (not nickname), or custom profile id: "
+    )
 
     steam_id = get_steam_id(username)
 
@@ -126,7 +150,10 @@ Manually locate your Steam ID and enter it here if your username doesn't work!""
 
         exit(-1)
 
-    appid_to_icon = {str(game["appid"]): f"{game['img_icon_url']}.jpg" for game in body["response"]["games"]}
+    appid_to_icon = {
+        str(game["appid"]): f"{game['img_icon_url']}.jpg"
+        for game in body["response"]["games"]
+    }
 
     return appid_to_icon
 
@@ -168,7 +195,9 @@ def get_steam_library_index():
 
     # Search Registry
     try:
-        hkey = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, "SOFTWARE\WOW6432Node\Valve\Steam")
+        hkey = winreg.OpenKey(
+            winreg.HKEY_LOCAL_MACHINE, "SOFTWARE\WOW6432Node\Valve\Steam"
+        )
     except:
         hkey = None
         print(sys.exc_info())
@@ -189,7 +218,9 @@ def get_steam_library_index():
 
     # Try and get the library index file as a sanity check for the right folder
     try:
-        library_index_path = pathlib.Path([x for x in steam_path.glob("steamapps/libraryfolders.vdf")][0])
+        library_index_path = pathlib.Path(
+            [x for x in steam_path.glob("steamapps/libraryfolders.vdf")][0]
+        )
     except:
         print("This doesn't look like the right folder!")
         exit()
@@ -234,7 +265,9 @@ def get_installed_games(libraries, icons):
     # Horrible flattening of each manifest file
     manifests = [
         item
-        for sublist in [[x for x in path.glob("steamapps/appmanifest_*.acf")] for path in libraries]
+        for sublist in [
+            [x for x in path.glob("steamapps/appmanifest_*.acf")] for path in libraries
+        ]
         for item in sublist
     ]
 
@@ -247,11 +280,16 @@ def get_installed_games(libraries, icons):
         try:
             with open(m.resolve(), encoding="utf-8") as acf:
                 lines = acf.readlines()
-                name, location = [p.search("\n".join([l.strip() for l in lines])) for p in patterns]
+                name, location = [
+                    p.search("\n".join([l.strip() for l in lines])) for p in patterns
+                ]
 
                 if name and location:
                     appid = m.stem.split("_")[1]
-                    name, location = [field[0].replace('"', "").split("\t\t")[1] for field in [name, location]]
+                    name, location = [
+                        field[0].replace('"', "").split("\t\t")[1]
+                        for field in [name, location]
+                    ]
                     location = m.parent / f"common/{location}"
                     try:
                         location.resolve(strict=True)
@@ -261,11 +299,17 @@ def get_installed_games(libraries, icons):
                         "name": name,
                         "location": location,
                         "icon": None,
-                        "icon_hash": icons[appid].split(".")[0] if appid in icons.keys() else None,
-                        "icon_ext": icons[appid].split(".")[1] if appid in icons.keys() else None,
+                        "icon_hash": icons[appid].split(".")[0]
+                        if appid in icons.keys()
+                        else None,
+                        "icon_ext": icons[appid].split(".")[1]
+                        if appid in icons.keys()
+                        else None,
                     }
                 else:
-                    print(f"  Couldn't locate name or location for game {m}\n  Name: {name}\n  Location: {location}\n")
+                    print(
+                        f"  Couldn't locate name or location for game {m}\n  Name: {name}\n  Location: {location}\n"
+                    )
 
         except KeyboardInterrupt as e:
             raise
@@ -304,7 +348,9 @@ def get_icons(games):
             # Write the ico data to an icon file in the game's install dir
             icon_url = f"https://steamcdn-a.akamaihd.net/steamcommunity/public/images/apps/{appid}/{game['icon_hash']}.{game['icon_ext']}"
             icon_path = pathlib.Path(game["location"] / f"{game['icon_hash']}.ico")
-            with http.request("GET", icon_url, preload_content=False) as jpg_data, open(icon_path, "wb+") as ico_file:
+            with http.request("GET", icon_url, preload_content=False) as jpg_data, open(
+                icon_path, "wb+"
+            ) as ico_file:
                 jpg = Image.open(jpg_data)
                 jpg.save(icon_path)
             jpg_data.release_conn()
@@ -327,7 +373,11 @@ def create_shortcuts(games, create_with_missing, start_menu=False):
     """
 
     if start_menu:
-        s = pathlib.Path(path.expandvars("%SystemDrive%\ProgramData\Microsoft\Windows\Start Menu\Programs"))
+        s = pathlib.Path(
+            path.expandvars(
+                "%SystemDrive%\ProgramData\Microsoft\Windows\Start Menu\Programs"
+            )
+        )
         folder = s / "Steam Games"
     else:
         folder = pathlib.Path("./shortcuts")
