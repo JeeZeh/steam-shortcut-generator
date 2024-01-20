@@ -12,7 +12,7 @@ import vdf
 from PIL import Image
 
 STEAM_API = "http://api.steampowered.com/"
-KEY = "66D1275E24E6B963247C47EF178BD6B1"
+KEY = "20F58DAB4E215359D7667DB18C99BD8D"
 games_endpoint = f"{STEAM_API}IPlayerService/GetOwnedGames/v0001/?key={KEY}&format=json&include_appinfo=true&include_played_free_games=true&steamid="
 id_endpoint = f"{STEAM_API}ISteamUser/ResolveVanityURL/v0001/?key={KEY}&vanityurl="
 http = urllib3.PoolManager()
