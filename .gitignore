@@ -1,3 +1,5 @@
 shortcuts
 steam_shortcuts.py
 settings.json
+.venv
+.python-version
