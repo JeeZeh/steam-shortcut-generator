@@ -31,7 +31,7 @@ def main():
 
     if not libraries:
         print("No libraries to check")
-        exit(0)
+        sys.exit(0)
 
     icons = get_steam_game_icons(local_users)
 
@@ -111,7 +111,7 @@ def is_integer(x):
     try:
         int(x)
         return True
-    except:
+    except ValueError:
         return False
 
 
@@ -133,7 +133,7 @@ def get_steam_game_icons(local_users: List[Tuple[str, str]]):
             f.write(f"Empty response from SteamAPI for user {username} ({steam_id}):\n")
             f.write(json.dumps(body))
 
-        exit(-1)
+        sys.exit(-1)
 
     appid_to_icon = {
         str(game["appid"]): f"{game['img_icon_url']}.jpg"
@@ -164,7 +164,7 @@ def determine_username_id(local_users: List[Tuple[str, str]]):
                 if choice > 0 and choice <= len(local_users):
                     username, steam_id = local_users[choice - 1]
                     break
-            except:
+            except ValueError:
                 print("Invalid input: " + idx)
 
     if username is None or steam_id is None:
@@ -182,7 +182,7 @@ def determine_username_id(local_users: List[Tuple[str, str]]):
 
             print("Please double check your details and try again.")
             print("If this issue persists, please report it on github!")
-            exit(-1)
+            sys.exit(-1)
     return username, steam_id
 
 
@@ -218,9 +218,9 @@ def get_steam_library_path(steam_path: pathlib.Path) -> pathlib.Path:
         return pathlib.Path(
             [x for x in steam_path.glob("steamapps/libraryfolders.vdf")][0]
         )
-    except:
+    except IndexError:
         print("Could not locate local library.")
-        exit(-1)
+        sys.exit(-1)
 
 
 def get_steam_local_user_ids(steam_path: pathlib.Path) -> List[Tuple[str, str]]:
@@ -238,7 +238,7 @@ def get_steam_local_user_ids(steam_path: pathlib.Path) -> List[Tuple[str, str]]:
                 if isinstance(data, dict) and data.get("AccountName"):
                     users.append((data["AccountName"], id_))
 
-    except:
+    except Exception:
         print("Could not locate local users.")
     finally:
         return users
@@ -258,12 +258,12 @@ def get_steam_path():
         hkey = winreg.OpenKey(
             winreg.HKEY_LOCAL_MACHINE, "SOFTWARE\WOW6432Node\Valve\Steam"
         )
-    except:
+    except OSError:
         hkey = None
         print(sys.exc_info())
     try:
         steam_path = winreg.QueryValueEx(hkey, "InstallPath")[0]
-    except:
+    except OSError:
         steam_path = None
         print(sys.exc_info())
     winreg.CloseKey(hkey)
@@ -344,7 +344,7 @@ def get_installed_games(libraries, icons):
                     location = m.parent / f"common/{location}"
                     try:
                         location.resolve(strict=True)
-                    except:
+                    except FileNotFoundError:
                         continue
                     games[appid] = {
                         "name": name,
@@ -380,7 +380,7 @@ def check_for_icons(games):
         try:
             icon_path = pathlib.Path(game["location"] / f"{game['icon_hash']}.ico")
             games[appid]["icon"] = icon_path.resolve(strict=True)
-        except Exception as e:
+        except Exception:
             continue
 
 
@@ -410,7 +410,7 @@ def get_icons(games):
             games[appid]["icon"] = icon_path
         except KeyboardInterrupt:
             raise
-        except Exception as e:
+        except Exception:
             with open("error_log.txt", "a", encoding="utf-8") as f:
                 f.write(traceback.format_exc())
 
@@ -460,4 +460,5 @@ if __name__ == "__main__":
     except KeyboardInterrupt as ke:
         print(ke)
     except Exception:
-        print("Unexpected exception", traceback.print_exc())
+        print("Unexpected exception")
+        traceback.print_exc()
