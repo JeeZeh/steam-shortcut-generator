@@ -125,7 +125,7 @@ def get_steam_game_icons(local_users: List[Tuple[str, str]]):
     body = json.loads(resolve_id.data.decode("utf-8"))
     if resolve_id.status != 200:
         print(f"Provided or resolved ID not working: {steam_id}")
-        print(f"Please check ID manually & report on GitHub if the issue persists.")
+        print("Please check ID manually & report on GitHub if the issue persists.")
     elif len(body["response"]) == 0:
         print(f"\nEmpty response from SteamAPI")
         print(f"{steam_id}'s game library is not publicly visible")
