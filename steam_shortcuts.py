@@ -3,9 +3,10 @@ import pathlib
 import re
 import sys
 import traceback
-from typing import List, Tuple
+from typing import List, Tuple, Dict, Any, Optional
 import winreg
 from os import path
+import os
 
 import urllib3
 import vdf
@@ -91,6 +92,14 @@ def main():
         == "y"
     )
 
+    # Add non-Steam games
+    add_non_steam_games = (
+        input("\nWould you like to add non-Steam games? y/[N] ").lower().strip() == "y"
+    )
+    if add_non_steam_games:
+        non_steam_games = get_non_steam_games()
+        games.update(non_steam_games)
+
     # Create shortcuts, show some stats, and exit
     try:
         count, folder = create_shortcuts(games, create_with_missing, start_menu)
@@ -105,6 +114,48 @@ def main():
     print(
         f"You can find them in {f'./{folder}' if not start_menu else f'your Start Menu ({folder})'}"
     )
+
+
+def get_non_steam_games() -> Dict[str, Dict[str, Any]]:
+    """
+    Reads non-Steam game details from user input.
+    Returns a dictionary of appid -> {name, location, executable, icon, icon_hash, icon_ext, is_non_steam}
+    """
+    non_steam_games = {}
+    while True:
+        name = input("Enter the name of the non-Steam game (or 'done' to finish): ")
+        if name.lower() == "done":
+            break
+
+        # Get installation directory
+        location = input(f"Enter the installation directory for {name}: ")
+
+        # Get executable file path
+        executable = input(f"Enter the executable file name for {name} (e.g., game.exe): ")
+        full_executable_path = os.path.join(location, executable)
+
+        if not os.path.isfile(full_executable_path):
+            print(f"Warning: Executable file not found at {full_executable_path}")
+            continue_anyway = input("Continue anyway? [Y]/n: ").lower().strip() != "n"
+            if not continue_anyway:
+                continue
+
+        # Get icon path (optional)
+        icon_path = input(f"Enter the path to the icon for {name} (optional): ")
+        icon = pathlib.Path(icon_path) if icon_path and os.path.isfile(icon_path) else None
+
+        appid = f"nonsteam_{len(non_steam_games) + 1}"
+        non_steam_games[appid] = {
+            "name": name,
+            "location": pathlib.Path(location),
+            "executable": executable,  # Store the executable file name
+            "icon": icon,
+            "icon_hash": None,
+            "icon_ext": None,
+            "is_non_steam": True  # Mark as non-Steam game
+        }
+
+    return non_steam_games
 
 
 def is_integer(x):
@@ -415,43 +466,56 @@ def get_icons(games):
                 f.write(traceback.format_exc())
 
 
-def create_shortcuts(games, create_with_missing, start_menu=False):
+def create_shortcuts(games: Dict[str, Dict[str, Any]],
+                    create_with_missing: bool,
+                    start_menu: bool = False) -> Tuple[int, str]:
     """
-    For each game, now create the URL shortcuts to steam://rungameid/{appid},
-    set the icon if it exists, or blank if the user asks for icon-less shortcuts
-
-    Returns the number of shortcuts created
+    Creates shortcuts for the given games.
+    Returns a tuple of (number of shortcuts created, folder name)
     """
+    import pythoncom
+    from win32com.shell import shell
 
-    if start_menu:
-        s = pathlib.Path(
-            path.expandvars(
-                "%SystemDrive%\ProgramData\Microsoft\Windows\Start Menu\Programs"
-            )
-        )
-        folder = s / "Steam Games"
-    else:
-        folder = pathlib.Path("./shortcuts")
-    folder.mkdir(parents=True, exist_ok=True)
     count = 0
-    for appid, game in games.items():
-        # Sanitise the game's name for use as a filename
-        filename = re.sub(r'[\\/*?:"<>|]', "", game["name"]) + ".url"
+    folder = "Start Menu\\Programs\\Steam Shortcuts" if start_menu else "shortcuts"
 
-        # Skip game if missing the icon and the user asked to
-        # not create shortcuts with missing icons
-        if not game["icon"] and not create_with_missing:
+    # Create folder if it doesn't exist
+    pathlib.Path(folder).mkdir(parents=True, exist_ok=True)
+
+    for appid, game in games.items():
+        if not create_with_missing and not game["icon"]:
             continue
 
-        # Write the shortcut file
-        with open(folder / filename, "w+", encoding="utf-8") as shortcut:
-            shortcut.write("[InternetShortcut]\n")
-            shortcut.write("IconIndex=0\n")
-            shortcut.write(f"URL=steam://rungameid/{appid}\n")
-            shortcut.write(f"IconFile={game['icon']}\n")
+        shortcut_path = str(pathlib.Path(folder) / f"{game['name']}.lnk")
+
+        # Create the shortcut
+        shortcut = pythoncom.CoCreateInstance(
+            shell.CLSID_ShellLink, None, pythoncom.CLSCTX_INPROC_SERVER, shell.IID_IShellLink
+        )
+
+        # Set target path based on game type
+        if game.get("is_non_steam", False):
+            # Ensure location is properly converted to Path and join with executable
+            location = game["location"] if isinstance(game["location"], pathlib.Path) else pathlib.Path(game["location"])
+            target_path = str(location / game["executable"])
+            shortcut.SetPath(target_path)
+            shortcut.SetWorkingDirectory(str(location))
+        else:
+            shortcut.SetPath(f"steam://rungameid/{appid}")
+
+        # Set icon if available
+        if game["icon"]:
+            # Convert icon path to string if it's a Path object
+            icon_path = str(game["icon"]) if game["icon"] else None
+            if icon_path:
+                shortcut.SetIconLocation(icon_path, 0)
+
+        # Save shortcut
+        persist_file = shortcut.QueryInterface(pythoncom.IID_IPersistFile)
+        persist_file.Save(shortcut_path, 0)
         count += 1
 
-    return (count, folder)
+    return count, folder
 
 
 if __name__ == "__main__":
