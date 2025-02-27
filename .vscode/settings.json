@@ -7,5 +7,10 @@
     ],
     "python.linting.mypyArgs": [
         "--ignore-missing-imports"
-    ]
+    ],
+    "python.analysis.autoImportCompletions": true,
+    "python.analysis.typeCheckingMode": "basic",
+    "cSpell.enabledSchemes": {
+        "file": false
+    }
 }
