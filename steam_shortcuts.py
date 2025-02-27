@@ -119,40 +119,92 @@ def main():
 def get_non_steam_games() -> Dict[str, Dict[str, Any]]:
     """
     Reads non-Steam game details from user input.
-    Returns a dictionary of appid -> {name, location, executable, icon, icon_hash, icon_ext, is_non_steam}
+    Returns a dictionary of appid -> {name, location, executable, arguments, icon, icon_hash, icon_ext, is_non_steam}
     """
     non_steam_games = {}
+
+    def sanitize_filename(name):
+        """Sanitize filename to remove invalid characters"""
+        invalid_chars = '<>:"/\\|?*'
+        for char in invalid_chars:
+            name = name.replace(char, '_')
+        return name
+
     while True:
         name = input("Enter the name of the non-Steam game (or 'done' to finish): ")
         if name.lower() == "done":
             break
 
-        # Get installation directory
-        location = input(f"Enter the installation directory for {name}: ")
+        # Sanitize name for file system
+        sanitized_name = sanitize_filename(name)
+        if sanitized_name != name:
+            print(f"Note: Name will be saved as '{sanitized_name}' for filesystem compatibility")
+            name = sanitized_name
 
-        # Get executable file path
-        executable = input(f"Enter the executable file name for {name} (e.g., game.exe): ")
-        full_executable_path = os.path.join(location, executable)
+        # Get full executable path
+        executable_path = input(f"Enter the full path to the executable for {name}: ")
 
-        if not os.path.isfile(full_executable_path):
-            print(f"Warning: Executable file not found at {full_executable_path}")
+        if not os.path.isfile(executable_path):
+            print(f"Warning: Executable file not found at {executable_path}")
             continue_anyway = input("Continue anyway? [Y]/n: ").lower().strip() != "n"
             if not continue_anyway:
                 continue
 
+        # Get optional command line arguments
+        arguments = input(f"Enter any command line arguments for {name} (optional): ")
+
+        # Split into location directory and executable filename
+        location = os.path.dirname(executable_path)
+        executable = os.path.basename(executable_path)
+
         # Get icon path (optional)
         icon_path = input(f"Enter the path to the icon for {name} (optional): ")
-        icon = pathlib.Path(icon_path) if icon_path and os.path.isfile(icon_path) else None
+        icon = None
+        if icon_path:
+            if not os.path.isfile(icon_path):
+                print(f"Warning: Icon file not found at {icon_path}")
+            else:
+                # Check if it's a valid icon file
+                valid_icon = False
+                try:
+                    # Try to open with PIL to validate
+                    if icon_path.lower().endswith(('.ico', '.exe', '.dll')):
+                        # These are valid icon sources
+                        valid_icon = True
+                    elif icon_path.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp')):
+                        # For image files, check if they can be opened
+                        Image.open(icon_path)
+                        valid_icon = True
+                except Exception:
+                    valid_icon = False
 
+                if not valid_icon:
+                    print(f"Warning: Icon file at {icon_path} is not in a supported format")
+                else:
+                    icon = icon_path
+
+        # Generate a unique ID for this non-Steam game
         appid = f"nonsteam_{len(non_steam_games) + 1}"
+
+        # Check if a game with this name already exists in our dictionary
+        existing_names = [game["name"] for game in non_steam_games.values()]
+        if name in existing_names:
+            # Append a number to make the name unique
+            counter = 1
+            while f"{name} ({counter})" in existing_names:
+                counter += 1
+            name = f"{name} ({counter})"
+            print(f"A game with this name already exists. Renamed to: {name}")
+
         non_steam_games[appid] = {
             "name": name,
-            "location": pathlib.Path(location),
-            "executable": executable,  # Store the executable file name
+            "location": location,
+            "executable": executable,
+            "arguments": arguments,
             "icon": icon,
             "icon_hash": None,
             "icon_ext": None,
-            "is_non_steam": True  # Mark as non-Steam game
+            "is_non_steam": True
         }
 
     return non_steam_games
@@ -482,38 +534,55 @@ def create_shortcuts(games: Dict[str, Dict[str, Any]],
     # Create folder if it doesn't exist
     pathlib.Path(folder).mkdir(parents=True, exist_ok=True)
 
+    # Track created shortcut names to avoid duplicates
+    created_names = set()
+
     for appid, game in games.items():
         if not create_with_missing and not game["icon"]:
             continue
 
-        shortcut_path = str(pathlib.Path(folder) / f"{game['name']}.lnk")
+        # Ensure the shortcut name is unique
+        base_name = game["name"]
+        shortcut_name = base_name
+        counter = 1
+        while shortcut_name in created_names:
+            shortcut_name = f"{base_name} ({counter})"
+            counter += 1
 
-        # Create the shortcut
-        shortcut = pythoncom.CoCreateInstance(
-            shell.CLSID_ShellLink, None, pythoncom.CLSCTX_INPROC_SERVER, shell.IID_IShellLink
-        )
+        created_names.add(shortcut_name)
+        shortcut_path = str(pathlib.Path(folder) / f"{shortcut_name}.lnk")
 
-        # Set target path based on game type
-        if game.get("is_non_steam", False):
-            # Ensure location is properly converted to Path and join with executable
-            location = game["location"] if isinstance(game["location"], pathlib.Path) else pathlib.Path(game["location"])
-            target_path = str(location / game["executable"])
-            shortcut.SetPath(target_path)
-            shortcut.SetWorkingDirectory(str(location))
-        else:
-            shortcut.SetPath(f"steam://rungameid/{appid}")
+        try:
+            # Create the shortcut
+            shortcut = pythoncom.CoCreateInstance(
+                shell.CLSID_ShellLink, None, pythoncom.CLSCTX_INPROC_SERVER, shell.IID_IShellLink
+            )
 
-        # Set icon if available
-        if game["icon"]:
-            # Convert icon path to string if it's a Path object
-            icon_path = str(game["icon"]) if game["icon"] else None
-            if icon_path:
-                shortcut.SetIconLocation(icon_path, 0)
+            # Set target path based on game type
+            if game.get("is_non_steam", False):
+                # For non-Steam games, create the full path
+                target_path = os.path.join(game["location"], game["executable"])
+                shortcut.SetPath(target_path)
+                shortcut.SetWorkingDirectory(game["location"])
 
-        # Save shortcut
-        persist_file = shortcut.QueryInterface(pythoncom.IID_IPersistFile)
-        persist_file.Save(shortcut_path, 0)
-        count += 1
+                # Add command line arguments if specified
+                if game.get("arguments"):
+                    shortcut.SetArguments(game["arguments"])
+            else:
+                shortcut.SetPath(f"steam://rungameid/{appid}")
+
+            # Set icon if available
+            if game["icon"]:
+                shortcut.SetIconLocation(game["icon"], 0)
+
+            # Save shortcut
+            persist_file = shortcut.QueryInterface(pythoncom.IID_IPersistFile)
+            persist_file.Save(shortcut_path, 0)
+            count += 1
+
+        except Exception as e:
+            print(f"Failed to create shortcut for {shortcut_name}: {str(e)}")
+            continue
 
     return count, folder
 
