@@ -7,6 +7,7 @@ from typing import List, Tuple, Dict, Any, Optional
 import winreg
 from os import path
 import os
+import platform
 
 import urllib3
 import vdf
@@ -525,66 +526,106 @@ def create_shortcuts(games: Dict[str, Dict[str, Any]],
     Creates shortcuts for the given games.
     Returns a tuple of (number of shortcuts created, folder name)
     """
-    import pythoncom
-    from win32com.shell import shell
-
     count = 0
-    folder = "Start Menu\\Programs\\Steam Shortcuts" if start_menu else "shortcuts"
+    folder = "shortcuts"
 
-    # Create folder if it doesn't exist
-    pathlib.Path(folder).mkdir(parents=True, exist_ok=True)
-
-    # Track created shortcut names to avoid duplicates
-    created_names = set()
+    if start_menu:
+        if platform.system() == "Windows":
+            folder = "Start Menu\\Programs\\Steam Shortcuts"
+        else:
+            folder = os.path.expanduser("~/.local/share/applications")
+    else:
+        pathlib.Path(folder).mkdir(exist_ok=True)
 
     for appid, game in games.items():
         if not create_with_missing and not game["icon"]:
             continue
 
-        # Ensure the shortcut name is unique
-        base_name = game["name"]
-        shortcut_name = base_name
-        counter = 1
-        while shortcut_name in created_names:
-            shortcut_name = f"{base_name} ({counter})"
-            counter += 1
+        if platform.system() == "Windows":
+            shortcut_path = pathlib.Path(folder) / f"{game['name']}.lnk"
+            create_windows_shortcut(shortcut_path, game, appid)
+        else:
+            shortcut_path = pathlib.Path(folder) / f"{game['name']}.desktop"
+            create_linux_shortcut(shortcut_path, game, appid)
 
-        created_names.add(shortcut_name)
-        shortcut_path = str(pathlib.Path(folder) / f"{shortcut_name}.lnk")
-
-        try:
-            # Create the shortcut
-            shortcut = pythoncom.CoCreateInstance(
-                shell.CLSID_ShellLink, None, pythoncom.CLSCTX_INPROC_SERVER, shell.IID_IShellLink
-            )
-
-            # Set target path based on game type
-            if game.get("is_non_steam", False):
-                # For non-Steam games, create the full path
-                target_path = os.path.join(game["location"], game["executable"])
-                shortcut.SetPath(target_path)
-                shortcut.SetWorkingDirectory(game["location"])
-
-                # Add command line arguments if specified
-                if game.get("arguments"):
-                    shortcut.SetArguments(game["arguments"])
-            else:
-                shortcut.SetPath(f"steam://rungameid/{appid}")
-
-            # Set icon if available
-            if game["icon"]:
-                shortcut.SetIconLocation(game["icon"], 0)
-
-            # Save shortcut
-            persist_file = shortcut.QueryInterface(pythoncom.IID_IPersistFile)
-            persist_file.Save(shortcut_path, 0)
-            count += 1
-
-        except Exception as e:
-            print(f"Failed to create shortcut for {shortcut_name}: {str(e)}")
-            continue
+        count += 1
 
     return count, folder
+
+
+def create_windows_shortcut(shortcut_path: pathlib.Path, game: Dict[str, Any], appid: str):
+    """
+    Creates a Windows shortcut (.lnk) for the given game.
+    """
+    import pythoncom
+    from win32com.shell import shell
+
+    try:
+        # Create the shortcut
+        shortcut = pythoncom.CoCreateInstance(
+            shell.CLSID_ShellLink, None, pythoncom.CLSCTX_INPROC_SERVER, shell.IID_IShellLink
+        )
+
+        # Set target path based on game type
+        if game.get("is_non_steam", False):
+            # For non-Steam games, create the full path
+            target_path = os.path.join(game["location"], game["executable"])
+            shortcut.SetPath(target_path)
+            shortcut.SetWorkingDirectory(game["location"])
+
+            # Add command line arguments if specified
+            if game.get("arguments"):
+                shortcut.SetArguments(game["arguments"])
+        else:
+            shortcut.SetPath(f"steam://rungameid/{appid}")
+
+        # Set icon if available
+        if game["icon"]:
+            shortcut.SetIconLocation(game["icon"], 0)
+
+        # Save shortcut
+        persist_file = shortcut.QueryInterface(pythoncom.IID_IPersistFile)
+        persist_file.Save(str(shortcut_path), 0)
+
+    except Exception as e:
+        print(f"Failed to create Windows shortcut for {game['name']}: {str(e)}")
+
+
+def create_linux_shortcut(shortcut_path: pathlib.Path, game: Dict[str, Any], appid: str):
+    """
+    Creates a Linux shortcut (.desktop) for the given game.
+    """
+    try:
+        # Create the .desktop file content
+        if game.get("is_non_steam", False):
+            # For non-Steam games, create the full path
+            target_path = os.path.join(game["location"], game["executable"])
+            exec_command = f'"{target_path}" {game.get("arguments", "")}'
+        else:
+            exec_command = f'steam://rungameid/{appid}'
+
+        icon_path = game["icon"] if game["icon"] else ""
+
+        desktop_entry = f"""
+        [Desktop Entry]
+        Version=1.0
+        Name={game['name']}
+        Exec={exec_command}
+        Icon={icon_path}
+        Terminal=false
+        Type=Application
+        Categories=Game;
+        """
+
+        # Write the .desktop file
+        with open(shortcut_path, 'w') as f:
+            f.write(desktop_entry.strip())
+
+        # Make the .desktop file executable
+        os.chmod(shortcut_path, 0o755)
+
+    except Exception as e:
+        print(f"Failed to create Linux shortcut for {game['name']}: {str(e)}")
 
 
 if __name__ == "__main__":
