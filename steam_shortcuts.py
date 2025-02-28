@@ -227,10 +227,13 @@ def get_steam_game_icons(local_users: List[Tuple[str, str]]):
 
     resolve_id = http.request("GET", games_endpoint + steam_id)
     body = json.loads(resolve_id.data.decode("utf-8"))
+
+    # Fix the response checking logic
     if resolve_id.status != 200:
         print(f"Provided or resolved ID not working: {steam_id}")
         print("Please check ID manually & report on GitHub if the issue persists.")
-    elif len(body["response"]) == 0:
+        sys.exit(-1)
+    elif not body.get("response") or not body["response"].get("games"):
         print(f"\nEmpty response from SteamAPI")
         print(f"{steam_id}'s game library is not publicly visible")
         with open("error_log.txt", "a", encoding="utf-8") as f:
@@ -242,6 +245,7 @@ def get_steam_game_icons(local_users: List[Tuple[str, str]]):
     appid_to_icon = {
         str(game["appid"]): f"{game['img_icon_url']}.jpg"
         for game in body["response"]["games"]
+        if "img_icon_url" in game and game['img_icon_url']  # Only include games with icons
     }
 
     return appid_to_icon
@@ -340,7 +344,7 @@ def get_steam_local_user_ids(steam_path: pathlib.Path) -> List[Tuple[str, str]]:
 
             for id_, data in lib_vdf.get("users", {}).items():
                 if isinstance(data, dict) and data.get("AccountName"):
-                    users.append((data["AccountName"], id_))
+                    users.append((id_, data["AccountName"]))
 
     except Exception:
         print("Could not locate local users.")
@@ -358,19 +362,22 @@ def get_steam_path():
     """
 
     # Search Registry
+    steam_path = None
+    hkey = None
     try:
         hkey = winreg.OpenKey(
             winreg.HKEY_LOCAL_MACHINE, "SOFTWARE\WOW6432Node\Valve\Steam"
         )
+        try:
+            steam_path = winreg.QueryValueEx(hkey, "InstallPath")[0]
+        except OSError:
+            steam_path = None
+            print(sys.exc_info())
+        finally:
+            if hkey:
+                winreg.CloseKey(hkey)
     except OSError:
-        hkey = None
         print(sys.exc_info())
-    try:
-        steam_path = winreg.QueryValueEx(hkey, "InstallPath")[0]
-    except OSError:
-        steam_path = None
-        print(sys.exc_info())
-    winreg.CloseKey(hkey)
 
     # Ask the user if the registry was unhelpful
     if not steam_path:
