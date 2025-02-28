@@ -3,9 +3,11 @@ import pathlib
 import re
 import sys
 import traceback
-from typing import List, Tuple
+from typing import List, Tuple, Dict, Any, Optional
 import winreg
 from os import path
+import os
+import platform
 
 import urllib3
 import vdf
@@ -91,6 +93,14 @@ def main():
         == "y"
     )
 
+    # Add non-Steam games
+    add_non_steam_games = (
+        input("\nWould you like to add non-Steam games? y/[N] ").lower().strip() == "y"
+    )
+    if add_non_steam_games:
+        non_steam_games = get_non_steam_games()
+        games.update(non_steam_games)
+
     # Create shortcuts, show some stats, and exit
     try:
         count, folder = create_shortcuts(games, create_with_missing, start_menu)
@@ -105,6 +115,100 @@ def main():
     print(
         f"You can find them in {f'./{folder}' if not start_menu else f'your Start Menu ({folder})'}"
     )
+
+
+def get_non_steam_games() -> Dict[str, Dict[str, Any]]:
+    """
+    Reads non-Steam game details from user input.
+    Returns a dictionary of appid -> {name, location, executable, arguments, icon, icon_hash, icon_ext, is_non_steam}
+    """
+    non_steam_games = {}
+
+    def sanitize_filename(name):
+        """Sanitize filename to remove invalid characters"""
+        invalid_chars = '<>:"/\\|?*'
+        for char in invalid_chars:
+            name = name.replace(char, '_')
+        return name
+
+    while True:
+        name = input("Enter the name of the non-Steam game (or 'done' to finish): ")
+        if name.lower() == "done":
+            break
+
+        # Sanitize name for file system
+        sanitized_name = sanitize_filename(name)
+        if sanitized_name != name:
+            print(f"Note: Name will be saved as '{sanitized_name}' for filesystem compatibility")
+            name = sanitized_name
+
+        # Get full executable path
+        executable_path = input(f"Enter the full path to the executable for {name}: ")
+
+        if not os.path.isfile(executable_path):
+            print(f"Warning: Executable file not found at {executable_path}")
+            continue_anyway = input("Continue anyway? [Y]/n: ").lower().strip() != "n"
+            if not continue_anyway:
+                continue
+
+        # Get optional command line arguments
+        arguments = input(f"Enter any command line arguments for {name} (optional): ")
+
+        # Split into location directory and executable filename
+        location = os.path.dirname(executable_path)
+        executable = os.path.basename(executable_path)
+
+        # Get icon path (optional)
+        icon_path = input(f"Enter the path to the icon for {name} (optional): ")
+        icon = None
+        if icon_path:
+            if not os.path.isfile(icon_path):
+                print(f"Warning: Icon file not found at {icon_path}")
+            else:
+                # Check if it's a valid icon file
+                valid_icon = False
+                try:
+                    # Try to open with PIL to validate
+                    if icon_path.lower().endswith(('.ico', '.exe', '.dll')):
+                        # These are valid icon sources
+                        valid_icon = True
+                    elif icon_path.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp')):
+                        # For image files, check if they can be opened
+                        Image.open(icon_path)
+                        valid_icon = True
+                except Exception:
+                    valid_icon = False
+
+                if not valid_icon:
+                    print(f"Warning: Icon file at {icon_path} is not in a supported format")
+                else:
+                    icon = icon_path
+
+        # Generate a unique ID for this non-Steam game
+        appid = f"nonsteam_{len(non_steam_games) + 1}"
+
+        # Check if a game with this name already exists in our dictionary
+        existing_names = [game["name"] for game in non_steam_games.values()]
+        if name in existing_names:
+            # Append a number to make the name unique
+            counter = 1
+            while f"{name} ({counter})" in existing_names:
+                counter += 1
+            name = f"{name} ({counter})"
+            print(f"A game with this name already exists. Renamed to: {name}")
+
+        non_steam_games[appid] = {
+            "name": name,
+            "location": location,
+            "executable": executable,
+            "arguments": arguments,
+            "icon": icon,
+            "icon_hash": None,
+            "icon_ext": None,
+            "is_non_steam": True
+        }
+
+    return non_steam_games
 
 
 def is_integer(x):
@@ -123,10 +227,13 @@ def get_steam_game_icons(local_users: List[Tuple[str, str]]):
 
     resolve_id = http.request("GET", games_endpoint + steam_id)
     body = json.loads(resolve_id.data.decode("utf-8"))
+
+    # Fix the response checking logic
     if resolve_id.status != 200:
         print(f"Provided or resolved ID not working: {steam_id}")
         print("Please check ID manually & report on GitHub if the issue persists.")
-    elif len(body["response"]) == 0:
+        sys.exit(-1)
+    elif not body.get("response") or not body["response"].get("games"):
         print(f"\nEmpty response from SteamAPI")
         print(f"{steam_id}'s game library is not publicly visible")
         with open("error_log.txt", "a", encoding="utf-8") as f:
@@ -138,6 +245,7 @@ def get_steam_game_icons(local_users: List[Tuple[str, str]]):
     appid_to_icon = {
         str(game["appid"]): f"{game['img_icon_url']}.jpg"
         for game in body["response"]["games"]
+        if "img_icon_url" in game and game['img_icon_url']  # Only include games with icons
     }
 
     return appid_to_icon
@@ -236,7 +344,7 @@ def get_steam_local_user_ids(steam_path: pathlib.Path) -> List[Tuple[str, str]]:
 
             for id_, data in lib_vdf.get("users", {}).items():
                 if isinstance(data, dict) and data.get("AccountName"):
-                    users.append((data["AccountName"], id_))
+                    users.append((id_, data["AccountName"]))
 
     except Exception:
         print("Could not locate local users.")
@@ -254,19 +362,22 @@ def get_steam_path():
     """
 
     # Search Registry
+    steam_path = None
+    hkey = None
     try:
         hkey = winreg.OpenKey(
             winreg.HKEY_LOCAL_MACHINE, "SOFTWARE\WOW6432Node\Valve\Steam"
         )
+        try:
+            steam_path = winreg.QueryValueEx(hkey, "InstallPath")[0]
+        except OSError:
+            steam_path = None
+            print(sys.exc_info())
+        finally:
+            if hkey:
+                winreg.CloseKey(hkey)
     except OSError:
-        hkey = None
         print(sys.exc_info())
-    try:
-        steam_path = winreg.QueryValueEx(hkey, "InstallPath")[0]
-    except OSError:
-        steam_path = None
-        print(sys.exc_info())
-    winreg.CloseKey(hkey)
 
     # Ask the user if the registry was unhelpful
     if not steam_path:
@@ -415,43 +526,113 @@ def get_icons(games):
                 f.write(traceback.format_exc())
 
 
-def create_shortcuts(games, create_with_missing, start_menu=False):
+def create_shortcuts(games: Dict[str, Dict[str, Any]],
+                    create_with_missing: bool,
+                    start_menu: bool = False) -> Tuple[int, str]:
     """
-    For each game, now create the URL shortcuts to steam://rungameid/{appid},
-    set the icon if it exists, or blank if the user asks for icon-less shortcuts
-
-    Returns the number of shortcuts created
+    Creates shortcuts for the given games.
+    Returns a tuple of (number of shortcuts created, folder name)
     """
+    count = 0
+    folder = "shortcuts"
 
     if start_menu:
-        s = pathlib.Path(
-            path.expandvars(
-                "%SystemDrive%\ProgramData\Microsoft\Windows\Start Menu\Programs"
-            )
-        )
-        folder = s / "Steam Games"
+        if platform.system() == "Windows":
+            folder = "Start Menu\\Programs\\Steam Shortcuts"
+        else:
+            folder = os.path.expanduser("~/.local/share/applications")
     else:
-        folder = pathlib.Path("./shortcuts")
-    folder.mkdir(parents=True, exist_ok=True)
-    count = 0
-    for appid, game in games.items():
-        # Sanitise the game's name for use as a filename
-        filename = re.sub(r'[\\/*?:"<>|]', "", game["name"]) + ".url"
+        pathlib.Path(folder).mkdir(exist_ok=True)
 
-        # Skip game if missing the icon and the user asked to
-        # not create shortcuts with missing icons
-        if not game["icon"] and not create_with_missing:
+    for appid, game in games.items():
+        if not create_with_missing and not game["icon"]:
             continue
 
-        # Write the shortcut file
-        with open(folder / filename, "w+", encoding="utf-8") as shortcut:
-            shortcut.write("[InternetShortcut]\n")
-            shortcut.write("IconIndex=0\n")
-            shortcut.write(f"URL=steam://rungameid/{appid}\n")
-            shortcut.write(f"IconFile={game['icon']}\n")
+        if platform.system() == "Windows":
+            shortcut_path = pathlib.Path(folder) / f"{game['name']}.lnk"
+            create_windows_shortcut(shortcut_path, game, appid)
+        else:
+            shortcut_path = pathlib.Path(folder) / f"{game['name']}.desktop"
+            create_linux_shortcut(shortcut_path, game, appid)
+
         count += 1
 
-    return (count, folder)
+    return count, folder
+
+
+def create_windows_shortcut(shortcut_path: pathlib.Path, game: Dict[str, Any], appid: str):
+    """
+    Creates a Windows shortcut (.lnk) for the given game.
+    """
+    import pythoncom
+    from win32com.shell import shell
+
+    try:
+        # Create the shortcut
+        shortcut = pythoncom.CoCreateInstance(
+            shell.CLSID_ShellLink, None, pythoncom.CLSCTX_INPROC_SERVER, shell.IID_IShellLink
+        )
+
+        # Set target path based on game type
+        if game.get("is_non_steam", False):
+            # For non-Steam games, create the full path
+            target_path = os.path.join(game["location"], game["executable"])
+            shortcut.SetPath(target_path)
+            shortcut.SetWorkingDirectory(game["location"])
+
+            # Add command line arguments if specified
+            if game.get("arguments"):
+                shortcut.SetArguments(game["arguments"])
+        else:
+            shortcut.SetPath(f"steam://rungameid/{appid}")
+
+        # Set icon if available
+        if game["icon"]:
+            shortcut.SetIconLocation(game["icon"], 0)
+
+        # Save shortcut
+        persist_file = shortcut.QueryInterface(pythoncom.IID_IPersistFile)
+        persist_file.Save(str(shortcut_path), 0)
+
+    except Exception as e:
+        print(f"Failed to create Windows shortcut for {game['name']}: {str(e)}")
+
+
+def create_linux_shortcut(shortcut_path: pathlib.Path, game: Dict[str, Any], appid: str):
+    """
+    Creates a Linux shortcut (.desktop) for the given game.
+    """
+    try:
+        # Create the .desktop file content
+        if game.get("is_non_steam", False):
+            # For non-Steam games, create the full path
+            target_path = os.path.join(game["location"], game["executable"])
+            exec_command = f'"{target_path}" {game.get("arguments", "")}'
+        else:
+            exec_command = f'steam://rungameid/{appid}'
+
+        icon_path = game["icon"] if game["icon"] else ""
+
+        desktop_entry = f"""
+        [Desktop Entry]
+        Version=1.0
+        Name={game['name']}
+        Exec={exec_command}
+        Icon={icon_path}
+        Terminal=false
+        Type=Application
+        Categories=Game;
+        """
+
+        # Write the .desktop file
+        with open(shortcut_path, 'w') as f:
+            f.write(desktop_entry.strip())
+
+        # Make the .desktop file executable
+        os.chmod(shortcut_path, 0o755)
+
+    except Exception as e:
+        print(f"Failed to create Linux shortcut for {game['name']}: {str(e)}")
 
 
 if __name__ == "__main__":

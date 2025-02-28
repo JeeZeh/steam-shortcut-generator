@@ -1,6 +1,6 @@
-![](https://github.com/JeeZeh/steam-shortcut-generator/blob/master/icon.png)
-
 # Steam Shortcut Generator
+
+![Steam Shortcut Generator Icon](https://github.com/JeeZeh/steam-shortcut-generator/blob/master/icon.png)
 
 Ever needed to recreate all of your Steam shortcuts? Maybe you forgot to back them up when reinstalling your OS, or just never created them in the first place...
 
