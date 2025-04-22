@@ -3,12 +3,10 @@ import pathlib
 import re
 import sys
 import traceback
-from typing import List, Tuple, Dict, Any, Optional
+from typing import List, Tuple, Dict, Any
 import winreg
-from os import path
 import os
 import platform
-
 import urllib3
 import vdf
 from PIL import Image
@@ -93,13 +91,13 @@ def main():
         == "y"
     )
 
-    # Add non-Steam games
-    add_non_steam_games = (
-        input("\nWould you like to add non-Steam games? y/[N] ").lower().strip() == "y"
-    )
-    if add_non_steam_games:
-        non_steam_games = get_non_steam_games()
-        games.update(non_steam_games)
+    # # Add non-Steam games
+    # add_non_steam_games = (
+    #     input("\nWould you like to add non-Steam games? y/[N] ").lower().strip() == "y"
+    # )
+    # if add_non_steam_games:
+    #     non_steam_games = get_non_steam_games()
+    #     games.update(non_steam_games)
 
     # Create shortcuts, show some stats, and exit
     try:
@@ -128,7 +126,7 @@ def get_non_steam_games() -> Dict[str, Dict[str, Any]]:
         """Sanitize filename to remove invalid characters"""
         invalid_chars = '<>:"/\\|?*'
         for char in invalid_chars:
-            name = name.replace(char, '_')
+            name = name.replace(char, "_")
         return name
 
     while True:
@@ -139,7 +137,9 @@ def get_non_steam_games() -> Dict[str, Dict[str, Any]]:
         # Sanitize name for file system
         sanitized_name = sanitize_filename(name)
         if sanitized_name != name:
-            print(f"Note: Name will be saved as '{sanitized_name}' for filesystem compatibility")
+            print(
+                f"Note: Name will be saved as '{sanitized_name}' for filesystem compatibility"
+            )
             name = sanitized_name
 
         # Get full executable path
@@ -169,10 +169,10 @@ def get_non_steam_games() -> Dict[str, Dict[str, Any]]:
                 valid_icon = False
                 try:
                     # Try to open with PIL to validate
-                    if icon_path.lower().endswith(('.ico', '.exe', '.dll')):
+                    if icon_path.lower().endswith((".ico", ".exe", ".dll")):
                         # These are valid icon sources
                         valid_icon = True
-                    elif icon_path.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp')):
+                    elif icon_path.lower().endswith((".png", ".jpg", ".jpeg", ".bmp")):
                         # For image files, check if they can be opened
                         Image.open(icon_path)
                         valid_icon = True
@@ -180,7 +180,9 @@ def get_non_steam_games() -> Dict[str, Dict[str, Any]]:
                     valid_icon = False
 
                 if not valid_icon:
-                    print(f"Warning: Icon file at {icon_path} is not in a supported format")
+                    print(
+                        f"Warning: Icon file at {icon_path} is not in a supported format"
+                    )
                 else:
                     icon = icon_path
 
@@ -205,7 +207,7 @@ def get_non_steam_games() -> Dict[str, Dict[str, Any]]:
             "icon": icon,
             "icon_hash": None,
             "icon_ext": None,
-            "is_non_steam": True
+            "is_non_steam": True,
         }
 
     return non_steam_games
@@ -231,8 +233,8 @@ def get_steam_game_icons(local_users: List[Tuple[str, str]]):
         sys.exit(-1)
 
     headers = {
-        'User-Agent': 'steam-shortcut-generator/1.0',
-        'Accept': 'application/json'
+        "User-Agent": "steam-shortcut-generator/1.0",
+        "Accept": "application/json",
     }
 
     try:
@@ -240,7 +242,9 @@ def get_steam_game_icons(local_users: List[Tuple[str, str]]):
 
         if resolve_id.status == 400:
             print("\nError: Bad Request - Possible causes:")
-            print("1. Invalid Steam API key (get a new one from https://steamcommunity.com/dev/apikey)")
+            print(
+                "1. Invalid Steam API key (get a new one from https://steamcommunity.com/dev/apikey)"
+            )
             print(f"2. Invalid Steam ID: {steam_id}")
             print(f"3. API URL: {games_endpoint + steam_id}")
             sys.exit(-1)
@@ -261,14 +265,16 @@ def get_steam_game_icons(local_users: List[Tuple[str, str]]):
             print(f"\nEmpty response from SteamAPI")
             print(f"{steam_id}'s game library is not publicly visible")
             with open("error_log.txt", "a", encoding="utf-8") as f:
-                f.write(f"Empty response from SteamAPI for user {username} ({steam_id}):\n")
+                f.write(
+                    f"Empty response from SteamAPI for user {username} ({steam_id}):\n"
+                )
                 f.write(json.dumps(body))
             sys.exit(-1)
 
         appid_to_icon = {
             str(game["appid"]): f"{game['img_icon_url']}.jpg"
             for game in body["response"]["games"]
-            if "img_icon_url" in game and game['img_icon_url']
+            if "img_icon_url" in game and game["img_icon_url"]
         }
 
         return appid_to_icon
@@ -284,7 +290,8 @@ def determine_username_id(local_users: List[Tuple[str, str]]):
     if local_users:
         while True:
             options = "\n".join(
-                f"{i+1}) {u[1]} ({u[0]})" for i, u in enumerate(local_users)  # Changed order here
+                f"{i+1}) {u[1]} ({u[0]})"
+                for i, u in enumerate(local_users)  # Changed order here
             )
             idx = input(
                 "\nFound local users, enter a choice and press Enter:\n"
@@ -490,13 +497,17 @@ def get_installed_games(libraries, icons):
                         "executable": "",  # Added empty executable field
                         "arguments": "",  # Added empty arguments field
                         "icon": None,
-                        "icon_hash": icons[appid].split(".")[0]
-                        if appid in icons.keys()
-                        else None,
-                        "icon_ext": icons[appid].split(".")[1]
-                        if appid in icons.keys()
-                        else None,
-                        "is_non_steam": False  # Added to distinguish from non-Steam games
+                        "icon_hash": (
+                            icons[appid].split(".")[0]
+                            if appid in icons.keys()
+                            else None
+                        ),
+                        "icon_ext": (
+                            icons[appid].split(".")[1]
+                            if appid in icons.keys()
+                            else None
+                        ),
+                        "is_non_steam": False,  # Added to distinguish from non-Steam games
                     }
                 else:
                     print(
@@ -556,9 +567,11 @@ def get_icons(games):
                 f.write(traceback.format_exc())
 
 
-def create_shortcuts(games: Dict[str, Dict[str, Any]],
-                    create_with_missing: bool,
-                    start_menu: bool = False) -> Tuple[int, str]:
+def create_shortcuts(
+    games: Dict[str, Dict[str, Any]],
+    create_with_missing: bool,
+    start_menu: bool = False,
+) -> Tuple[int, str]:
     """
     Creates shortcuts for the given games.
     Returns a tuple of (number of shortcuts created, folder name)
@@ -568,9 +581,22 @@ def create_shortcuts(games: Dict[str, Dict[str, Any]],
 
     if start_menu:
         if platform.system() == "Windows":
-            folder = os.path.join(os.environ['APPDATA'], "Microsoft", "Windows", "Start Menu", "Programs", "Steam Shortcuts")
+            folder = os.path.join(
+                os.environ["APPDATA"],
+                "Microsoft",
+                "Windows",
+                "Start Menu",
+                "Programs",
+                "Steam Shortcuts",
+            )
         else:
-            folder = os.path.join(os.path.expanduser("~"), ".local", "share", "applications", "Steam Shortcuts")
+            folder = os.path.join(
+                os.path.expanduser("~"),
+                ".local",
+                "share",
+                "applications",
+                "Steam Shortcuts",
+            )
 
     folder_path = pathlib.Path(folder)
     folder_path.mkdir(parents=True, exist_ok=True)
@@ -587,7 +613,7 @@ def create_shortcuts(games: Dict[str, Dict[str, Any]],
         try:
             game_name = game.get("name", "Unknown Game")
             # Fix: Replace all filesystem-illegal characters with underscores
-            safe_name = re.sub(r'[<>:"/\\|?*]', '_', game_name)
+            safe_name = re.sub(r'[<>:"/\\|?*]', "_", game_name)
             game_url = f"steam://rungameid/{appid}"
 
             shortcut_path = folder_path / f"{safe_name}.url"
@@ -605,14 +631,18 @@ def create_shortcuts(games: Dict[str, Dict[str, Any]],
             count += 1
 
         except Exception as e:
-            print(f"Failed to create Windows shortcut for {game.get('name', 'Unknown Game')}: {str(e)}")
+            print(
+                f"Failed to create Windows shortcut for {game.get('name', 'Unknown Game')}: {str(e)}"
+            )
             with open("error_log.txt", "a", encoding="utf-8") as f:
                 f.write(f"Failed to create shortcut for {appid}: {str(e)}\n")
 
     return count, folder
 
 
-def create_windows_shortcut(shortcut_path: pathlib.Path, game: Dict[str, Any], appid: str):
+def create_windows_shortcut(
+    shortcut_path: pathlib.Path, game: Dict[str, Any], appid: str
+):
     """
     Creates a Windows shortcut (.lnk) for the given game.
     """
@@ -622,7 +652,10 @@ def create_windows_shortcut(shortcut_path: pathlib.Path, game: Dict[str, Any], a
     try:
         # Create the shortcut
         shortcut = pythoncom.CoCreateInstance(
-            shell.CLSID_ShellLink, None, pythoncom.CLSCTX_INPROC_SERVER, shell.IID_IShellLink
+            shell.CLSID_ShellLink,
+            None,
+            pythoncom.CLSCTX_INPROC_SERVER,
+            shell.IID_IShellLink,
         )
 
         # Set target path based on game type
@@ -650,7 +683,9 @@ def create_windows_shortcut(shortcut_path: pathlib.Path, game: Dict[str, Any], a
         print(f"Failed to create Windows shortcut for {game['name']}: {str(e)}")
 
 
-def create_linux_shortcut(shortcut_path: pathlib.Path, game: Dict[str, Any], appid: str):
+def create_linux_shortcut(
+    shortcut_path: pathlib.Path, game: Dict[str, Any], appid: str
+):
     """
     Creates a Linux shortcut (.desktop) for the given game.
     """
@@ -661,7 +696,7 @@ def create_linux_shortcut(shortcut_path: pathlib.Path, game: Dict[str, Any], app
             target_path = os.path.join(game["location"], game["executable"])
             exec_command = f'"{target_path}" {game.get("arguments", "")}'
         else:
-            exec_command = f'steam://rungameid/{appid}'
+            exec_command = f"steam://rungameid/{appid}"
 
         icon_path = game["icon"] if game["icon"] else ""
 
@@ -677,7 +712,7 @@ def create_linux_shortcut(shortcut_path: pathlib.Path, game: Dict[str, Any], app
         """
 
         # Write the .desktop file
-        with open(shortcut_path, 'w') as f:
+        with open(shortcut_path, "w") as f:
             f.write(desktop_entry.strip())
 
         # Make the .desktop file executable
