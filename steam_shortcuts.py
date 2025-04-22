@@ -590,13 +590,16 @@ def create_shortcuts(
                 "Steam Shortcuts",
             )
         else:
-            folder = os.path.join(
-                os.path.expanduser("~"),
-                ".local",
-                "share",
-                "applications",
-                "Steam Shortcuts",
+            # XDG-compliant path with fallback
+            xdg_data_home = os.environ.get(
+                "XDG_DATA_HOME", os.path.expanduser("~/.local/share")
             )
+            folder = os.path.join(xdg_data_home, "applications")
+    else:
+        folder = "shortcuts"
+
+        # Add environment variable override
+        folder = os.environ.get("STEAM_SHORTCUTS_DIR", folder)
 
     folder_path = pathlib.Path(folder)
     folder_path.mkdir(parents=True, exist_ok=True)
