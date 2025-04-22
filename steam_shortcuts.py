@@ -221,34 +221,61 @@ def is_integer(x):
 
 def get_steam_game_icons(local_users: List[Tuple[str, str]]):
     games_endpoint = f"{STEAM_API}IPlayerService/GetOwnedGames/v0001/?key={KEY}&format=json&include_appinfo=true&include_played_free_games=true&steamid="
-    print("""This tool needs to know your Steam ID (long number).""")
+    print("This tool needs to know your Steam ID (long number).")
 
     username, steam_id = determine_username_id(local_users)
 
-    resolve_id = http.request("GET", games_endpoint + steam_id)
-    body = json.loads(resolve_id.data.decode("utf-8"))
-
-    # Fix the response checking logic
-    if resolve_id.status != 200:
-        print(f"Provided or resolved ID not working: {steam_id}")
-        print("Please check ID manually & report on GitHub if the issue persists.")
-        sys.exit(-1)
-    elif not body.get("response") or not body["response"].get("games"):
-        print(f"\nEmpty response from SteamAPI")
-        print(f"{steam_id}'s game library is not publicly visible")
-        with open("error_log.txt", "a", encoding="utf-8") as f:
-            f.write(f"Empty response from SteamAPI for user {username} ({steam_id}):\n")
-            f.write(json.dumps(body))
-
+    # Verify Steam ID is numeric
+    if not steam_id.isdigit():
+        print("Error: Steam ID must be numeric.")
         sys.exit(-1)
 
-    appid_to_icon = {
-        str(game["appid"]): f"{game['img_icon_url']}.jpg"
-        for game in body["response"]["games"]
-        if "img_icon_url" in game and game['img_icon_url']  # Only include games with icons
+    headers = {
+        'User-Agent': 'steam-shortcut-generator/1.0',
+        'Accept': 'application/json'
     }
 
-    return appid_to_icon
+    try:
+        resolve_id = http.request("GET", games_endpoint + steam_id, headers=headers)
+
+        if resolve_id.status == 400:
+            print("\nError: Bad Request - Possible causes:")
+            print("1. Invalid Steam API key (get a new one from https://steamcommunity.com/dev/apikey)")
+            print(f"2. Invalid Steam ID: {steam_id}")
+            print(f"3. API URL: {games_endpoint + steam_id}")
+            sys.exit(-1)
+
+        if resolve_id.status != 200:
+            print(f"Error: Unexpected status code {resolve_id.status} from Steam API.")
+            sys.exit(-1)
+
+        try:
+            body = json.loads(resolve_id.data.decode("utf-8"))
+        except json.JSONDecodeError as e:
+            print("Error: Failed to decode Steam API response")
+            print(f"Raw response: {resolve_id.data.decode('utf-8', errors='replace')}")
+            print(f"JSON decode error: {str(e)}")
+            sys.exit(-1)
+
+        if not body.get("response") or not body["response"].get("games"):
+            print(f"\nEmpty response from SteamAPI")
+            print(f"{steam_id}'s game library is not publicly visible")
+            with open("error_log.txt", "a", encoding="utf-8") as f:
+                f.write(f"Empty response from SteamAPI for user {username} ({steam_id}):\n")
+                f.write(json.dumps(body))
+            sys.exit(-1)
+
+        appid_to_icon = {
+            str(game["appid"]): f"{game['img_icon_url']}.jpg"
+            for game in body["response"]["games"]
+            if "img_icon_url" in game and game['img_icon_url']
+        }
+
+        return appid_to_icon
+
+    except urllib3.exceptions.HTTPError as e:
+        print(f"HTTP Error occurred: {str(e)}")
+        sys.exit(-1)
 
 
 def determine_username_id(local_users: List[Tuple[str, str]]):
@@ -257,7 +284,7 @@ def determine_username_id(local_users: List[Tuple[str, str]]):
     if local_users:
         while True:
             options = "\n".join(
-                f"{i+1}) {u[0]} ({u[1]})" for i, u in enumerate(local_users)
+                f"{i+1}) {u[1]} ({u[0]})" for i, u in enumerate(local_users)  # Changed order here
             )
             idx = input(
                 "\nFound local users, enter a choice and press Enter:\n"
@@ -270,7 +297,7 @@ def determine_username_id(local_users: List[Tuple[str, str]]):
             try:
                 choice = int(idx)
                 if choice > 0 and choice <= len(local_users):
-                    username, steam_id = local_users[choice - 1]
+                    steam_id, username = local_users[choice - 1]  # Changed order here
                     break
             except ValueError:
                 print("Invalid input: " + idx)
@@ -366,7 +393,7 @@ def get_steam_path():
     hkey = None
     try:
         hkey = winreg.OpenKey(
-            winreg.HKEY_LOCAL_MACHINE, "SOFTWARE\WOW6432Node\Valve\Steam"
+            winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\\WOW6432Node\\Valve\\Steam"
         )
         try:
             steam_path = winreg.QueryValueEx(hkey, "InstallPath")[0]
@@ -382,7 +409,7 @@ def get_steam_path():
     # Ask the user if the registry was unhelpful
     if not steam_path:
         steam_path = input(
-            "Failed to find Steam installation path, please provide the path e.g. C:\Program Files (x86)\Steam, ~/.local/steam, etc\n"
+            "Failed to find Steam installation path, please provide the path e.g. C:\\Program Files (x86)\\Steam, ~/.local/steam, etc\n"
         )
 
     steam_path = pathlib.Path(steam_path)
@@ -460,6 +487,8 @@ def get_installed_games(libraries, icons):
                     games[appid] = {
                         "name": name,
                         "location": location,
+                        "executable": "",  # Added empty executable field
+                        "arguments": "",  # Added empty arguments field
                         "icon": None,
                         "icon_hash": icons[appid].split(".")[0]
                         if appid in icons.keys()
@@ -467,6 +496,7 @@ def get_installed_games(libraries, icons):
                         "icon_ext": icons[appid].split(".")[1]
                         if appid in icons.keys()
                         else None,
+                        "is_non_steam": False  # Added to distinguish from non-Steam games
                     }
                 else:
                     print(
@@ -538,24 +568,46 @@ def create_shortcuts(games: Dict[str, Dict[str, Any]],
 
     if start_menu:
         if platform.system() == "Windows":
-            folder = "Start Menu\\Programs\\Steam Shortcuts"
+            folder = os.path.join(os.environ['APPDATA'], "Microsoft", "Windows", "Start Menu", "Programs", "Steam Shortcuts")
         else:
-            folder = os.path.expanduser("~/.local/share/applications")
-    else:
-        pathlib.Path(folder).mkdir(exist_ok=True)
+            folder = os.path.join(os.path.expanduser("~"), ".local", "share", "applications", "Steam Shortcuts")
 
+    folder_path = pathlib.Path(folder)
+    folder_path.mkdir(parents=True, exist_ok=True)
+
+    # Fix: Add type checking and error handling for game entries
     for appid, game in games.items():
-        if not create_with_missing and not game["icon"]:
+        if not isinstance(game, dict):
+            print(f"Skipping invalid game entry: {appid}")
             continue
 
-        if platform.system() == "Windows":
-            shortcut_path = pathlib.Path(folder) / f"{game['name']}.lnk"
-            create_windows_shortcut(shortcut_path, game, appid)
-        else:
-            shortcut_path = pathlib.Path(folder) / f"{game['name']}.desktop"
-            create_linux_shortcut(shortcut_path, game, appid)
+        if not game.get("icon") and not create_with_missing:
+            continue
 
-        count += 1
+        try:
+            game_name = game.get("name", "Unknown Game")
+            # Fix: Replace all filesystem-illegal characters with underscores
+            safe_name = re.sub(r'[<>:"/\\|?*]', '_', game_name)
+            game_url = f"steam://rungameid/{appid}"
+
+            shortcut_path = folder_path / f"{safe_name}.url"
+
+            # Fix: Add proper URL format and error handling
+            with open(shortcut_path, "w", encoding="utf-8") as shortcut:
+                shortcut.write("[InternetShortcut]\n")
+                shortcut.write(f"URL={game_url}\n")
+
+                if game.get("icon"):
+                    icon_path = pathlib.Path(game["icon"]).as_uri()
+                    shortcut.write(f"IconFile={icon_path}\n")
+                    shortcut.write(f"IconIndex=0\n")
+
+            count += 1
+
+        except Exception as e:
+            print(f"Failed to create Windows shortcut for {game.get('name', 'Unknown Game')}: {str(e)}")
+            with open("error_log.txt", "a", encoding="utf-8") as f:
+                f.write(f"Failed to create shortcut for {appid}: {str(e)}\n")
 
     return count, folder
 
