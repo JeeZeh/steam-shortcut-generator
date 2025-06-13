@@ -1,3 +1,12 @@
+# /// script
+# requires-python = ">=3.13"
+# dependencies = [
+#     "pillow",
+#     "urllib3",
+#     "vdf",
+# ]
+# exclude-newer = "2025-06-14T00:00:00Z"
+# ///
 import json
 import pathlib
 import re
@@ -256,7 +265,7 @@ def get_steam_path():
     # Search Registry
     try:
         hkey = winreg.OpenKey(
-            winreg.HKEY_LOCAL_MACHINE, "SOFTWARE\WOW6432Node\Valve\Steam"
+            winreg.HKEY_LOCAL_MACHINE, "SOFTWARE\\WOW6432Node\\Valve\\Steam"
         )
     except OSError:
         hkey = None
@@ -271,7 +280,7 @@ def get_steam_path():
     # Ask the user if the registry was unhelpful
     if not steam_path:
         steam_path = input(
-            "Failed to find Steam installation path, please provide the path e.g. C:\Program Files (x86)\Steam, ~/.local/steam, etc\n"
+            "Failed to find Steam installation path, please provide the path e.g. C:\\Program Files (x86)\\Steam, ~/.local/steam, etc\n"
         )
 
     steam_path = pathlib.Path(steam_path)
@@ -290,19 +299,15 @@ def get_library_folders(steam_path, library_index_path):
     Returns the library locations
     """
 
-    libraries = []
-
     with open(library_index_path) as index_file:
         lib_vdf = vdf.load(index_file)
 
+    paths = set()
     for lib in lib_vdf.get("libraryfolders", {}).values():
         if isinstance(lib, dict) and lib.get("path"):
-            path = pathlib.Path(lib["path"])
-            libraries.append(path)
-
-    libraries.append(steam_path)
-
-    return sorted(libraries)
+            paths.add(lib["path"])
+    
+    return sorted(pathlib.Path(library_path) for library_path in paths)
 
 
 def get_installed_games(libraries, icons):
@@ -426,7 +431,7 @@ def create_shortcuts(games, create_with_missing, start_menu=False):
     if start_menu:
         s = pathlib.Path(
             path.expandvars(
-                "%SystemDrive%\ProgramData\Microsoft\Windows\Start Menu\Programs"
+                "%SystemDrive%\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs"
             )
         )
         folder = s / "Steam Games"

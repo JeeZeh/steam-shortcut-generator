@@ -9,7 +9,7 @@ If you have a large library of installed games and you don't want to manually cr
 [Here's a demo!](https://www.youtube.com/watch?v=eH-ouDx1Y68)
 
 > **Steam now supports this through selecting multiple library games > Manage > Create Desktop Shortcuts**.
-It can't, however, add them to the start menu for you automatically. This tool can!
+> It can't, however, add them to the start menu for you automatically. This tool can!
 
 ---
 
@@ -25,13 +25,12 @@ It can't, however, add them to the start menu for you automatically. This tool c
 
 >
 
-1. You need [Python 3.6 or newer](https://www.python.org/downloads/) installed (Python 3.8+ is recommended).
-2. Your Steam profile must have game library set to *publicly visible*.
-3. Install the requirements `pip install -U -r requirements.txt`
-4. From the command-line, PowerShell or equivialent terminal, run `python steam_shortcuts.py`.
-   1. If you want the shortcuts to go in your Start Menu, make sure to run this as an admin.
-5. Follow the prompts to create shortcuts with or without icons. You'll need to enter your Steam name, this is just used to cross reference the games you own for their icon file.
-6. The shortcuts will be created in `./shortcuts`, relative to wherever the script was run from, or the Start Menu if requested.
+1. Install `uv`: https://docs.astral.sh/uv/
+2. Run the script with `uv run --python 3.13 .\steam_shortcuts.py`
+3. Follow the prompts to create shortcuts with or without icons.
+   1. Your Steam profile must have game library set to _publicly visible_.
+   2. You'll need to enter your Steam name, this is just used to cross reference the games you own for their icon file.
+4. The shortcuts will be created in `./shortcuts`, relative to wherever the script was run from, or the Start Menu if requested.
 
 ## What does it do?
 

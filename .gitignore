@@ -3,3 +3,5 @@ steam_shortcuts.py
 settings.json
 .venv
 .python-version
+steam_shortcut_generator.egg-info
+error_log.txt
